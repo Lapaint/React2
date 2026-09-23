@@ -1,46 +1,51 @@
 # 김민우 (202230305) - React2
 
 ## [2026-09-23] 4주차: 동적 라우팅 심화 & 페이지 연결
- 
+
 ### 1. Link Component (API Reference 복습)
 - `<Link>`는 HTML `<a>` 요소를 확장하여 프리페칭(prefetching)과 라우트 간 클라이언트 사이드 내비게이션 기능을 제공하는 React 컴포넌트임. Next.js에서 라우트 간 이동을 위해 주로 사용됨.
 - 주요 prop
+
 | Prop | 예시 | 타입 |
-|---|---|---|
+| --- | --- | --- |
 | `href` (필수) | `href="/dashboard"` | String or Object |
 | `replace` | `replace={false}` | Boolean |
 | `scroll` | `scroll={false}` | Boolean |
 | `prefetch` | `prefetch={false}` | Boolean, "auto", or null |
 | `onNavigate` | `onNavigate={(e) => {}}` | Function |
 | `transitionTypes` | `transitionTypes={['slide-in']}` | string[] |
- 
+
 - `href`는 문자열뿐 아니라 `{ pathname, query }` 형태의 객체로도 전달 가능함(예: `/about?name=test`).
 - `className`이나 `target="_blank"`와 같은 `<a>` 태그 속성을 `<Link>`에 props로 추가하면, 내부의 `<a>` 요소로 그대로 전달됨.
+
 ### 2. Creating a layout (복습)
 - subpage의 layout은 없어도 되지만, **RootLayout 컴포넌트는 반드시 있어야 함**.
 - 문서에서는 root layout의 이름을 `DashboardLayout`이라고 했지만, layout은 결국 routing page를 위한 것이기 때문에 특별한 이유가 없다면 `RootLayout`으로 명명하는 것이 좋음.
+
 ### 3. Creating a nested route (중첩 라우트 만들기)
 - 중첩 라우트는 다중 URL 세그먼트로 구성된 라우트임. 예를 들어 `/blog/[slug]` 경로는 `/`(Root Segment), `blog`(Segment), `[slug]`(Leaf Segment) 세 개의 세그먼트로 구성됨.
 - 폴더는 URL 세그먼트에 매핑되는 경로 세그먼트를 정의하는 데 사용되고, 파일(`page`, `layout` 등)은 세그먼트에 표시되는 UI를 만드는 데 사용됨. 폴더를 중첩하면 중첩된 라우트를 만들 수 있음.
 - `/blog`에 대한 경로를 추가하려면 `app` 디렉토리에 `blog` 폴더를 만들고, 공개적으로 액세스할 수 있도록 `page.tsx` 파일을 추가함.
   - 문서 예제 코드(`@/lib/posts`, `@/ui/post` import)를 그대로 복사하면 해당 모듈이 없어 오류가 발생함. 실습에서는 `<li>Post 1</li>` 같은 더미 리스트를 바로 출력하는 방식으로 대체함.
 - 폴더 이름을 대괄호(예: `[slug]`)로 묶으면 데이터에서 여러 페이지를 생성하는 데 사용되는 **동적 경로 세그먼트**가 생성됨(예: 블로그 게시물, 제품 페이지 등). 특정 블로그 게시물 경로를 만들려면 `blog` 안에 새 `[slug]` 폴더를 만들고 `page` 파일을 추가함.
+
 ### 4. Dynamic Segment - [slug]의 이해
 - **슬러그(Slug)**: 신문·잡지 제목처럼 핵심 의미를 포함한 단어만 조합해 간단명료하게 작성한 경로 표현에서 유래함.
 - 경로 `/blog/[slug]`의 `[slug]` 부분은 불러올 데이터의 key를 의미하므로, 데이터에는 `slug` key가 반드시 있어야 함(`[foo]`라면 데이터에 `foo` key가 있어야 함).
 - 디렉토리 구조: `app/blog/page.tsx`(블로그 메인/목록), `app/blog/[slug]/page.tsx`(블로그 상세 페이지).
+
 ```tsx
 // app/blog/[slug]/page.tsx
 import { posts } from "../posts"
- 
+
 export default async function Posts({ params }: { params: { slug: string } }) {
   const { slug } = await params
   const post = posts.find((p) => p.slug === slug)
- 
+
   if (!post) {
     return <h1>게시글을 찾을 수 없습니다!</h1>
   }
- 
+
   return (
     <article>
       <h1>{post.title}</h1>
@@ -49,7 +54,7 @@ export default async function Posts({ params }: { params: { slug: string } }) {
   )
 }
 ```
- 
+
 - **오류**: `Route "/blog/[slug]" used params.slug. params should be awaited before using its properties.`
   - Next.js 14.2 이후로 `params`와 `searchParams`는 내부적으로 Promise 기반 객체일 수 있어서, 바로 쓰면 안 되고 `await`하거나 props의 구조 분해에서 미리 `await`해야 함(실습 버전은 15.x라 발생). 서버를 재실행해야 정상 동작할 수도 있음.
   - `async function`: 함수를 `async`로 선언해야 내부에서 `await`를 쓸 수 있음.
@@ -57,12 +62,15 @@ export default async function Posts({ params }: { params: { slug: string } }) {
   - `const post = posts.find((p) => p.slug === slug)`: `posts`는 배열(더미 데이터나 DB 조회 결과)이고, `.find()`는 조건에 맞는 첫 번째 요소를 반환, 못 찾으면 `undefined`를 반환함. 찾는 게 없는데 `post.title` 같은 접근을 하면 런타임 에러가 나므로 `if (!post)` 존재 검사가 필요함(문서에는 없어서 추가한 부분).
   - 데이터 소스가 크다면 `.find()`는 O(n)이므로 DB 쿼리로 바꿔야 함. O(n)은 입력 데이터 크기 n에 비례해 시간/메모리 사용량이 선형적으로 증가한다는 의미.
   - `Promise<{ slug: string }>` 타입을 명시하지 않아도 오류 없이 동작하지만, params가 비동기식이라는 것을 명확히 하고 코드 가독성을 높이며 `await`을 깜빡했을 때 TypeScript가 잡아줄 수 있으므로 Promise 명시를 권장함.
+
 - `/blog/page.tsx`도 더미 데이터를 `map` 함수(구조 분해 할당)로 출력하도록 수정함. 보통 `/blog/page.tsx`는 포스팅 리스트를, `/blog/[slug]/page.tsx`는 상세 페이지를 출력하는 역할을 함.
+
 ### 5. Nesting layouts (중첩 레이아웃)
 - 기본적으로 폴더 계층 구조의 레이아웃도 중첩되어 있음. 즉, 자식 prop을 통해 자식 레이아웃을 감싸게 됨. 특정 경로 세그먼트(폴더) 안에 레이아웃을 추가하여 레이아웃을 중첩할 수 있음.
 - 예를 들어 `/blog` 경로에 대한 레이아웃을 만들려면 `blog` 폴더 안에 새 `layout` 파일을 추가함(`app/blog/layout.tsx`). `[slug]`에도 동일하게 레이아웃을 추가해볼 수 있음(`app/blog/[slug]/layout.tsx`).
 - 위 레이아웃들을 결합하면 루트 레이아웃(`app/layout.tsx`)이 blog 레이아웃(`app/blog/layout.tsx`)을 감싸고, blog 레이아웃은 blog page와 블로그 게시물 페이지(`[slug]`)를 감쌈.
 - 실습: RootLayout / BlogLayout / SlugLayout 각각에 구분되는 header·footer 문구를 추가한 뒤 렌더링 결과를 확인하면, `Root Layout Header` → `Blog Layout Header` → `Slug Layout Header` → 페이지 콘텐츠 → `Slug Layout Footer` → `Blog Layout Footer` → `Root Layout Footer` 순서로 계층적으로 중첩되어 출력됨을 확인함.
+
 ### 6. Rendering with search params (검색 매개변수를 사용한 렌더링)
 - 서버 컴포넌트 `page`에서는 `searchParams` prop(타입: `Promise<{ [key: string]: string | string[] | undefined }>`)을 사용하여 검색 매개변수에 접근할 수 있음.
 - `searchParams`를 사용하면 해당 페이지는 **동적 렌더링(dynamic rendering)**으로 처리됨. URL의 쿼리 파라미터를 읽기 위해서는 요청(request)이 필요하기 때문에, Next.js는 이 페이지를 정적으로 미리 생성할 수 없고 요청이 올 때마다 새로 렌더링함.
@@ -74,13 +82,15 @@ export default async function Posts({ params }: { params: { slug: string } }) {
 - **params vs searchParams**: `params`는 동적 세그먼트(`[slug]`)에서 가져오는 값으로 URL의 path 부분 데이터, `searchParams`는 query string에서 가져오는 값으로 URL의 `?` 이후 key=value 데이터임.
 - `searchParams`란 URL의 쿼리 문자열(Query String)을 읽는 방법임. 예: `/products?category=shoes&page=2` → `category=shoes`, `page=2`가 search parameters. `searchParams`는 컴포넌트의 props로 전달되며, 내부적으로는 `URLSearchParams`처럼 작동함.
 - **정적 렌더링 vs 동적 렌더링 비교**
+
 | 항목 | 정적 렌더링 (Static) | 동적 렌더링 (Dynamic) |
-|---|---|---|
+| --- | --- | --- |
 | 예시 | `/about`, `/blog` (미리 생성됨) | `/products?page=2` (요청 시 생성) |
 | 장점 | 빠름, 캐시 가능 | 유연함, 쿼리나 요청 기반 응답 가능 |
 | searchParams 사용 | 불가능 | 가능 |
- 
+
 - **실습**(`app/products/page.tsx`)
+
 ```tsx
 export default async function ProductsPage({
   searchParams,
@@ -99,18 +109,21 @@ export default async function ProductsPage({
 ```
   - 6번 라인: `await searchParams`로 Promise가 끝나면 실제 값(객체)이 반환되고, 비구조화 할당으로 속성을 꺼내 옴. `{ id = "non id", name = "non name" }`처럼 왼쪽에 초기값을 지정해 두면 값이 없을 때 기본값이 사용됨.
   - 브라우저 확인: `/products` 접속 시 `id: non id`, `name: non name`(기본값)이 출력되고, `/products?id=foo&name=bar` 접속 시 `id: foo`, `name: bar`가 출력됨. 없는 속성(`&etc=1`)을 추가해도 오류는 없지만 의미는 없으며, 속성은 필요한 만큼 사용 가능함.
+
 ### 7. Linking between pages (페이지 간 연결) & Route 방식 비교
 - `<Link>`는 Next.js에서 경로를 탐색하는 기본 방법이며, 보다 고급 탐색을 위해 `useRouter` Hook을 사용할 수도 있음.
 - **React vs Next.js 라우팅 방식 차이**
+
 | 항목 | React (기본) | Next.js |
-|---|---|---|
+| --- | --- | --- |
 | 라우팅 방식 | 수동 (사용자가 직접 설정) | 자동 (폴더/파일 기반) |
 | 라우터 도구 | `react-router-dom` 같은 외부 라이브러리 필요 | 자체 내장된 파일 기반 라우팅 시스템 |
 | 라우트 정의 방식 | 코드에서 직접 `<Route>`로 정의 | 파일/폴더 이름으로 라우트가 자동 매핑됨 |
 | 예시 | `<Route path="/about" element={<About />} />` | `pages/about.js` 또는 `app/about/page.tsx` → `/about` 경로 자동 생성 |
- 
+
 - React는 기본적으로 라우팅 기능이 없기 때문에 직접 라우터 라이브러리를 설치해서 라우팅을 설정해야 하지만, Next.js는 자체적으로 라우팅 시스템을 내장하고 있음.
 
+---
 
 ## [2026-09-16] 3주차: 프로젝트 구성 심화 & Layouts and Pages
 
