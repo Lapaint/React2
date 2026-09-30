@@ -1,5 +1,351 @@
 # 김민우 (202230305) - React2
 
+## [2026-09-30] 5주차: Route 방식 비교 & Linking and Navigating
+
+### Route 방식 비교 (React vs Next.js)
+
+- React는 기본적으로 라우팅 기능이 없어 **라우터 라이브러리를 직접 설치**해서 설정해야 함.
+- Next.js는 **라우팅 시스템을 자체적으로 내장**하고 있음.
+
+| 항목 | React (기본) | Next.js |
+| --- | --- | --- |
+| 라우팅 방식 | **수동** (사용자가 직접 설정) | **자동** (폴더/파일 기반) |
+| 라우터 도구 | react-router-dom 같은 외부 라이브러리 필요 | 자체 내장된 파일 기반 라우팅 시스템 |
+| 라우트 정의 방식 | 코드에서 직접 `<Route>`로 정의 | 파일/폴더 이름으로 라우트가 자동 매핑됨 |
+| 예시 | `<Route path="/about" element={<About />} />` | `pages/about.js` 또는 `app/about/page.tsx` → `/about` 경로 자동 생성 |
+
+#### App Router의 강력한 기능들
+
+| 기능 | 설명 |
+| --- | --- |
+| 중첩 레이아웃 | 여러 레벨의 `layout.js` 파일을 통해 레이아웃을 계층적으로 구성 가능 |
+| 서버 컴포넌트 (RSC) | 서버에서만 렌더링되는 컴포넌트로 성능 최적화 가능 (React Server Component) |
+| 로딩 UI | 페이지 전환 중 보여줄 `loading.js` 파일 제공 |
+| 에러 UI | 특정 경로에서만 발생하는 에러를 처리할 `error.js` 제공 |
+| 병렬 라우팅 | 하나의 경로 안에서 탭 같은 독립적인 뷰를 병렬로 렌더링 가능 |
+
+#### 프로젝트별 추천 방식
+
+| 상황 | 추천 방식 |
+| --- | --- |
+| 새 프로젝트 시작 | **App Router** (app 디렉토리 기반) |
+| 기존 프로젝트 유지보수 | `pages/` 계속 사용 가능하지만, 점차 마이그레이션 필요 |
+| React처럼 수동 라우팅이 필요한 경우 | React + react-router-dom 사용 가능 (Next.js는 자동 라우팅이 기본) |
+
+---
+
+### 05. Linking and Navigating
+
+#### Introduction
+
+- Next.js에서 경로(route)는 기본적으로 **서버에서 렌더링**되므로, 클라이언트는 새 경로를 표시하기 전에 서버의 응답을 기다려야 하는 경우가 많음.
+- Next.js는 **prefetching, streaming, client-side transitions(클라이언트 사이드 전환)** 기능을 기본 제공하여 네비게이션 속도가 빠르고 반응성이 뛰어남.
+- 이번 장에서는 네비게이션이 작동하는 방식, 동적 라우트와 느린 네트워크에 맞게 네비게이션을 최적화하는 방법을 다룸.
+
+---
+
+### 1. How navigation works (네비게이션 작동 방식)
+
+- 다음 4가지 개념에 익숙해지는 것이 좋음: **Server Rendering / Prefetching / Streaming / Client-side transitions**
+
+#### 1-1. Server Rendering (서버 렌더링)
+
+- Next.js에서 **레이아웃(layout)과 페이지(page)는 기본적으로 React 서버 컴포넌트**임.
+- 초기 네비게이션 및 후속 네비게이션 시, **서버 컴포넌트 페이로드(Server Component Payload)** 는 클라이언트로 전송되기 전에 서버에서 생성됨.
+- 서버 렌더링은 발생 시점에 따라 두 가지 유형이 있음.
+
+| 유형 | 발생 시점 | 특징 |
+| --- | --- | --- |
+| 정적 렌더링 (사전 렌더링) | 빌드 시점 또는 재검증(revalidation) 중 | 결과가 **캐시**됨. 재검증을 사용하면 전체 앱을 다시 빌드하지 않고 캐시 항목을 업데이트 가능 |
+| 동적 렌더링 | 클라이언트 요청 시점 | 요청에 대한 응답으로 렌더링됨 |
+
+- 서버 렌더링의 단점은 클라이언트가 새 경로를 표시하기 전에 **서버의 응답을 기다려야 한다는 것**임.
+- Next.js는 방문 가능성이 높은 경로를 **미리 가져오고(prefetching)**, **클라이언트 측 전환(client-side transitions)** 을 수행하여 이 지연 문제를 해결함.
+
+**알아두면 좋습니다: 최초 방문을 위해서 HTML이 생성됩니다.**
+
+- 일반적인 React 앱(CSR만 사용)은 처음 방문 시 **빈 HTML + JavaScript 파일**만 내려주고, 브라우저가 JS를 실행해야 화면이 렌더링됨.
+- Next.js는 특정 URL을 처음 방문하면 서버가 **해당 페이지의 HTML을 미리 생성**해서 전달함.
+  - 브라우저는 JS 실행 전에도 즉시 HTML 뼈대와 콘텐츠를 표시할 수 있음.
+  - 이후 React가 **하이드레이션(hydration)** 과정을 거쳐 상호작용이 가능해짐.
+- 즉, 초기 방문 시에도 HTML을 생성해 내려주기 때문에 **UX가 좋아지고 SEO에도 유리**함.
+
+#### 1-2. Prefetching (프리페칭: 미리 가져오기)
+
+- 사용자가 해당 경로로 이동하기 **전에 백그라운드에서 해당 경로를 로드**하는 프로세스.
+- 링크를 클릭하기 전에 다음 경로 렌더링에 필요한 데이터가 준비되어 있어 경로 간 이동이 즉각적으로 느껴짐.
+- Next.js는 **`<Link>` 컴포넌트**와 연결된 경로를 자동으로 사용자 뷰포트에 미리 가져옴.
+- `<a>` 태그를 사용하면 **프리페칭을 하지 않음**.
+
+```tsx
+// app/layout.tsx
+import Link from 'next/link'
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        <nav>
+          {/* Prefetched when the link is hovered or enters the viewport */}
+          <Link href="/blog">Blog</Link>
+          {/* No prefetching */}
+          <a href="/contact">Contact</a>
+        </nav>
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+- 경로의 어느 정도를 프리페칭할지는 정적 경로인지 동적 경로인지에 따라 달라짐.
+
+| 경로 유형 | 프리페칭 범위 |
+| --- | --- |
+| 정적 경로 | **전체 경로**가 프리페치됨 |
+| 동적 경로 | 프리페치를 건너뛰거나, `loading.tsx`가 있는 경우 **부분적으로** 프리페칭됨 |
+
+- 동적 라우팅을 건너뛰거나 부분적으로 프리페칭하여 사용자가 방문하지 않을 수도 있는 경로에 대한 **서버의 불필요한 작업을 방지**함.
+- 다만 네비게이션 전에 서버 응답을 기다리면 앱이 응답하지 않는다는 인상을 줄 수 있으며, 동적 경로의 네비게이션 환경을 개선하려면 **스트리밍**을 사용할 수 있음.
+
+#### 1-3. Streaming (스트리밍)
+
+- 서버가 전체 경로가 렌더링될 때까지 기다리지 않고, **동적 경로의 일부가 준비되는 즉시 클라이언트에 전송**할 수 있음.
+- 페이지의 일부가 아직 로드 중이더라도 사용자는 더 빨리 콘텐츠를 볼 수 있음. (공유 레이아웃과 로딩 스켈레톤을 미리 요청 가능)
+- Next.js는 내부적으로 `page.tsx` 콘텐츠를 **`<Suspense>` 경계로 자동 래핑**함.
+  - 미리 가져온 대체 UI는 경로가 로드되는 동안 표시되고, 준비가 되면 실제 콘텐츠로 대체됨.
+  - `<Suspense>`를 사용하여 중첩된 컴포넌트에 대한 로딩 UI를 만들 수도 있음.
+- **loading skeletons**: 웹/앱에서 콘텐츠가 로드되는 동안 사용자에게 보여지는 빈 화면의 일종.
+
+**`loading.tsx`의 이점**
+
+- 사용자에게 즉각적인 네비게이션과 시각적 피드백을 제공함.
+- 공유 레이아웃은 상호작용이 가능하며, 네비게이션은 중단할 수 있음.
+- 핵심 웹 지표(TTFB, FCP, TTI)가 개선됨.
+
+**Core Web Vitals (웹 성능 지표)**
+
+- Next.js 공식 문서에서 이야기하는 TTFB, FCP, TTI는 과거에 주로 사용하던 **레거시 지표**이며, 웹페이지가 기술적으로 로드되는 순서대로 시간을 측정함.
+
+| 지표 | 의미 |
+| --- | --- |
+| TTFB (Time to First Byte) | 네트워크와 서버의 성능. 시간이 길면 서버가 느리거나 네트워크 연결에 문제가 있는 것 |
+| FCP (First Contentful Paint) | 하얀 화면에서 무언가 처음 뜰 때까지의 시간 (페이지가 로딩되기 시작했다고 인지하는 순간) |
+| TTI (Time to Interactive) | 페이지가 완전히 똑똑해진 시점. 버튼을 눌렀을 때 정상 작동할 수 있는 준비가 완료된 시간 |
+
+- 최신 성능 측정에서는 TTI의 중요도가 낮아지고 **TBT(Total Blocking Time)나 INP**로 대체되는 추세.
+
+**Shared layouts remain interactive and navigation is interruptible**
+
+- **Shared layouts remain interactive**
+  - App Router에서는 `layout.tsx`가 여러 페이지 간에 공유됨. (예: `/blog/page.tsx`와 `/blog/[slug]/page.tsx` 모두 `blog/layout.tsx`를 공유)
+  - 페이지 이동 시 `layout.tsx`는 다시 리렌더링되지 않고 유지되므로, 사이드바·네비게이션 메뉴·음악 플레이어 같은 UI가 새 페이지 로딩 중에도 계속 동작함.
+- **navigation is interruptible**
+  - 페이지 이동 중 사용자가 다른 네비게이션 동작을 하면 **이전 로딩을 취소(cancel)** 해 줌.
+  - 네트워크 요청이나 렌더링이 진행 중이라도 다시 클릭하면 이전 요청은 중단되고 새 요청만 실행됨.
+
+#### 1-4. Client-side transitions (클라이언트 측 전환)
+
+- 일반적으로 서버 렌더링 페이지로 이동하면 전체 페이지가 로드되어 **state가 삭제되고, 스크롤 위치가 재설정되며, 상호작용이 차단**됨.
+- Next.js는 `<Link>` 컴포넌트를 사용하는 **클라이언트 측 전환**으로 이를 방지함. 페이지를 다시 로딩하는 대신 콘텐츠를 동적으로 업데이트함.
+  - 공유 레이아웃과 UI를 유지함.
+  - 현재 페이지를 미리 가져온(prefetching) 로딩 상태 또는 사용 가능한 경우 새 페이지로 바꿈.
+- 서버에서 렌더링된 앱을 클라이언트에서 렌더링된 앱처럼 느껴지게 하며, 프리페칭 및 스트리밍과 함께 사용하면 동적 경로에서도 빠른 전환이 가능함.
+
+#### 1절 실습: 네비게이션 작동 방식
+
+- 디렉토리 구조 (디렉토리 이름 `blog`는 다른 것으로 해도 됨)
+
+```
+app/
+  ├── page.tsx        // Root Page
+  ├── layout.tsx      // RootLayout
+  └── blog/
+      ├── page.tsx    // 블로그 목록
+      └── loading.tsx // 로딩 스켈레톤
+```
+
+- Root Page를 간단히 작성하고, blog 디렉토리에 간단한 page와 로딩 스켈레톤을 만듦.
+- RootLayout에 `Link` 컴포넌트를 이용해서 blog 네비게이션을 만듦.
+- 로딩 스켈레톤의 동작을 확인하기 위해 blog page에 **time delay**를 줌.
+- 참고: 공식 문서에는 RootLayout에 `<a>` 태그로 blog 네비게이션을 만드는 예제가 있음.
+
+---
+
+### 2. 전환을 느리게 만드는 요인
+
+- Next.js는 최적화를 통해 네비게이션 속도가 빠르지만, 특정 조건에서는 전환 속도가 여전히 느릴 수 있음.
+
+#### 2-1. 동적 경로 없는 `loading.tsx`
+
+- 동적 경로로 이동할 때 클라이언트는 서버 응답을 기다려야 해서 **앱이 응답하지 않는다는 인상**을 받을 수 있음.
+- **부분 프리페칭을 활성화**하고, 즉시 네비게이션을 트리거하고, 경로가 렌더링되는 동안 로딩 UI를 표시하려면 **동적 경로에 `loading.tsx`를 추가**하는 것이 좋음.
+
+```tsx
+// app/blog/[slug]/loading.tsx
+export default function Loading() {
+  return <LoadingSkeleton />
+}
+```
+
+**알아두면 좋은 정보: devIndicators**
+
+- 개발 모드에서 Next.js 개발자 도구(Devtools)를 사용하여 경로가 정적인지 동적인지 확인할 수 있음. (보통 좌측 하단에 N자 아이콘으로 표시)
+- Next.js 15.2.0부터 `position` 옵션이 새롭게 추가되었고, `appIsrStatus`, `buildActivity`, `buildActivityPosition` 옵션은 더 이상 사용되지 않음.
+- 아이콘이 보이지 않으면 `next.config.ts`에 `devIndicators`를 추가하고, 위치를 바꾸고 싶다면 인디케이터 설정에서 변경함. (아직은 라우팅 결과 정도만 확인 가능)
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  devIndicators: { position: 'bottom-left' },
+};
+
+export default nextConfig;
+```
+
+#### 2-2. 동적 세그먼트 없는 `generateStaticParams`
+
+- 동적 세그먼트는 사전 렌더링될 수 있지만, `generateStaticParams`가 누락되어 사전 렌더링되지 않으면 해당 경로는 **요청 시점에 동적 렌더링**으로 대체됨.
+- `generateStaticParams`를 추가하여 **빌드 시점에 경로가 정적으로 생성**되도록 함.
+
+```tsx
+// app/blog/[slug]/page.tsx
+export async function generateStaticParams() {
+  const posts = await fetch('https://.../posts').then((res) => res.json())
+
+  return posts.map((post) => ({
+    slug: post.slug,
+  }))
+}
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}) {
+  const { slug } = await params
+  // ...
+}
+```
+
+#### 실습 1: `generateStaticParams`가 없는 경우 (blog2)
+
+- 디렉토리 구조 (더미 데이터는 3장에서 사용했던 것을 사용, 테스트가 편하게 blog2 메뉴를 만듦)
+
+```
+app/
+  └── blog2/
+      ├── page.tsx    // 블로그 목록
+      ├── posts.tsx   // 더미 데이터
+      └── [slug]/
+          └── page.tsx // 개별 포스트
+```
+
+```tsx
+// app/blog2/[slug]/page.tsx
+import { posts } from "../posts";
+
+export default async function PostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params; // generateStaticParams가 없으므로 런타임에서 처리
+  const post = posts.find((p) => p.slug === slug);
+
+  if (!post) {
+    return <h1>포스트를 찾을 수 없습니다.</h1>;
+  }
+
+  return (
+    <article>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </article>
+  );
+}
+```
+
+- `generateStaticParams`를 안 쓰면 **요청할 때마다 서버에서 동적으로 처리**함.
+- 자주 변하지 않는 페이지는 `generateStaticParams` 사용을 권장함. (정적 사이트처럼 빠르기 때문)
+- 사용자 입력, DB 조회 등이 필요한 경우는 `generateStaticParams` 없이 **런타임 처리**를 하는 것이 좋음.
+
+#### 실습 2: `generateStaticParams`를 사용하는 경우 (blog3)
+
+- blog2 디렉토리를 복사해서 blog3로 만들면 실습을 빠르게 진행할 수 있음.
+- 아래처럼 `params`를 `await` 없이 바로 사용하면, 리스트에서 링크를 통해 슬러그에 접근할 때는 오류가 나지 않지만 **직접 링크로 접근하면 오류가 발생**함.
+
+```tsx
+// (오류 발생) params를 바로 사용
+export default async function PostPage({ params }: { params: { slug: string } }) {
+  const post = posts.find((p) => p.slug === params.slug);
+  // ...
+}
+```
+
+- 오류를 수정하기 위해서는 **`async`, `await`를 사용**해야 함.
+
+```tsx
+// app/blog3/[slug]/page.tsx
+import { notFound } from "next/navigation";
+import { posts } from "../posts";
+
+// 빌드 시점에 미리 생성할 slug 목록을 반환
+export async function generateStaticParams() {
+  return posts.map((post) => ({
+    slug: post.slug,
+  }));
+}
+
+// params는 Promise일 수 있으므로 await params로 값을 해제(unwrap)한 후 접근
+export default async function PostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+
+  const post = posts.find((p) => p.slug === slug);
+
+  // 일치하는 포스트가 없으면 404 처리 (실무에서는 notFound() 호출이나 커스텀 404 컴포넌트 사용)
+  if (!post) {
+    notFound();
+  }
+
+  return (
+    <article>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </article>
+  );
+}
+```
+
+**`generateStaticParams` 동작 흐름**
+
+- 빌드 시점에 Next.js가 `app/blog3/[slug]/page.tsx` 같은 동적 라우트를 찾으면 `generateStaticParams()`를 실행함.
+- 반환값은 `[{ slug: "hello" }, { slug: "world" }, { slug: "nextjs" }]` 같은 **slug 객체 배열** 형태임.
+- 각 params에 대해 `page.tsx`를 실행하여 **정적 HTML을 생성**함.
+
+| params | 빌드 후 생성되는 파일 |
+| --- | --- |
+| `{ slug: "hello" }` | `/blog/hello/index.html` |
+| `{ slug: "world" }` | `/blog/world/index.html` |
+| `{ slug: "nextjs" }` | `/blog/nextjs/index.html` |
+
+- 정리
+  - `generateStaticParams()` 자체는 **slug 배열만 반환**함.
+  - Next.js 빌드 프로세스가 이 배열을 순회하며 → 각 slug에 대해 `page.tsx` 실행 → 정적 HTML 생성.
+  - `map` 함수는 **HTML을 작성해야 할 리스트를 Next.js에게 전달**하는 역할을 함.
+
+
+
+---
+
+
+
 ## [2026-09-23] 4주차: 동적 라우팅 심화 & 페이지 연결
 
 ### 1. Link Component (API Reference 복습)
