@@ -1,5 +1,251 @@
 # 김민우 (202230305) - React2
 
+## [2026-10-07] 6주차: Linking and Navigating (이어서) & Server and Client Components
+
+### 1. 일반 함수와 객체 구조 분해 할당 매개변수 처리
+
+- 일반 함수는 `props` 전체를 받고, 구조 분해 할당은 필요한 값(`params`)만 바로 꺼내 씀.
+- `function Page({ params })`는 `const params = props.params`를 축약한 것 → **Next.js가 넘겨준 객체 중에서 `params`를 받아 사용**한다는 의미.
+
+```tsx
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}) {
+  const { slug } = await params
+  // ...
+}
+```
+
+| 부분 | 의미 |
+| --- | --- |
+| `{ params, }` | 실제로 받을 값을 구조 분해 할당하는 부분 |
+| `{ params: Promise<{ slug: string }> }` | TypeScript에서 `params`의 타입을 설명하는 부분 |
+| `slug: string` | 객체 중 `slug`의 값이 문자열이라는 의미 |
+| `Promise<...>` | 나중에 이런 형태로 prop을 전달하겠다는 의미 |
+| `await params` | `params`가 Promise이기 때문에 이렇게 받을 수 있음 |
+
+---
+
+### 2. generateStaticParams 실습 (blog3)
+
+- `blog2` 디렉토리를 복사해서 사용하면 빠르게 실습 가능, 테스트 편의를 위해 메뉴에 `Blog3` 추가.
+
+```
+app/
+└─ blog3/
+   ├─ page.tsx     // 블로그 목록
+   ├─ posts.tsx    // 더미 데이터
+   └─ [slug]/
+      └─ page.tsx  // 개별 포스트
+```
+
+```tsx
+// app/blog3/[slug]/page.tsx
+import { notFound } from 'next/navigation';
+import { posts } from '../posts';
+
+// 빌드 시점에 미리 생성할 slug 목록 반환 → 각 slug마다 정적 페이지 생성
+export async function generateStaticParams() {
+  return posts.map((post) => ({
+    slug: post.slug,
+  }));
+}
+
+// params는 Promise이므로 await로 값을 꺼낸 뒤 사용
+export default async function PostPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  // posts에서 slug에 해당하는 포스트 찾기
+  const post = posts.find((p) => p.slug === slug);
+
+  // 일치하는 포스트가 없으면 404 페이지 렌더링
+  if (!post) {
+    notFound();
+  }
+
+  return (
+    <article>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+    </article>
+  );
+}
+```
+
+- 목록 페이지는 `<Link href={`/blog3/${post.slug}`}>`로 각 포스트에 연결 (`posts.map()` 사용).
+- 리스트의 링크를 통해 슬러그에 접근하면 오류가 나지 않지만, **직접 링크로 접근하면 오류가 발생**함 (슬라이드 설명).
+
+#### 빌드 시 동작 흐름
+
+1. 빌드 시점에 Next.js가 `app/blog3/[slug]/page.tsx` 같은 **동적 라우트**를 찾으면 `generateStaticParams()`를 실행.
+2. 반환값은 `[{ slug: "hello" }, { slug: "world" }, { slug: "nextjs" }]` 형태.
+3. 각 `params`에 대해 `page.tsx`를 실행하여 **정적 HTML** 생성 (예: `/blog/hello/index.html`).
+
+- `generateStaticParams()` 자체는 **slug 배열만 반환**함.
+- Next.js 빌드 프로세스가 배열을 순회 → 각 slug에 대해 `page.tsx` 실행 → 정적 HTML 생성.
+- `map` 함수는 HTML을 작성해야 할 리스트를 Next.js에게 전달하는 역할.
+
+#### generateStaticParams 없음 vs 있음
+
+| 항목 | generateStaticParams 없음 | generateStaticParams 있음 |
+| --- | --- | --- |
+| 페이지 생성 시점 | 요청 시 서버에서 생성 (SSR/ISR) | 빌드 타임에 생성 (SSG) |
+| 초기 로딩 속도 | 서버 렌더링 필요 → 상대적으로 느림 | 정적 HTML 제공 → 매우 빠름 |
+| SEO | 가능하긴 함, 하지만 요청 시 생성 | 매우 유리 (검색엔진 즉시 HTML 크롤링 가능) |
+| 유연성 | slug를 무한정 지원 가능 (DB 조회 등) | slug를 미리 알아야 함 (동적 slug는 제한적) |
+
+#### await이 없어도 async를 붙여 두는 이유
+
+- Next.js 13+ App Router의 `page.tsx` 같은 Server Component는 **비동기 렌더링을 전제**로 함 (데이터를 fetch하는 경우가 많음).
+
+| 이유 | 설명 |
+| --- | --- |
+| 일관성 유지 | 어떤 페이지는 async, 어떤 페이지는 일반 function이면 혼란스러움 (공식 문서도 대부분 async function으로 예시 작성) |
+| 확장성 | 지금은 더미 데이터지만 나중에 DB/API에서 `await fetch(...)`가 들어갈 수 있으므로 미리 붙여 두면 수정 불필요 |
+| React Server Component 호환성 | Server Component는 Promise를 반환할 수 있어야 하고, Next.js는 async 패턴에 맞춰 최적화된 렌더링 파이프라인을 가짐 → 오버헤드 거의 없음 |
+
+---
+
+### 3. Linking and Navigating (이어서)
+
+#### 2-3. 느린 네트워크
+
+- 네트워크가 느리거나 불안정하면 링크 클릭 전에 **프리페칭이 완료되지 않을 수 있음** (정적/동적 경로 모두 영향).
+- 이 경우 `loading.tsx`가 아직 프리페칭되지 않아 즉시 표시되지 않을 수 있음.
+- 체감 성능 개선: **`useLinkStatus` Hook**으로 전환 중 인라인 시각적 피드백(스피너, 텍스트 글리머 등) 표시.
+
+```tsx
+'use client'
+import { useLinkStatus } from 'next/link'
+
+export default function LoadingIndicator() {
+  const { pending } = useLinkStatus()
+  return pending ? (
+    <div role="status" aria-label="Loading" className="spinner" />
+  ) : null
+}
+```
+
+- 초기 애니메이션 지연(예: 100ms) + `opacity: 0`으로 시작하면 로딩 표시기를 **디바운스**할 수 있음 → 내비게이션이 지정된 지연 시간보다 오래 걸릴 때만 표시.
+- ※ debounce: 연속적으로 발생하는 이벤트를 그룹화하여 특정 시간 간격 이후에 한 번만 처리하는 기술 (과도한 이벤트 방지, 성능 최적화).
+
+#### 2-4. 프리페칭 비활성화
+
+- `<Link prefetch={false} href="/blog">`로 프리페치를 끌 수 있음 → 대량의 링크 목록(예: 무한 스크롤 테이블) 렌더링 시 불필요한 리소스 사용 방지.
+
+| 라우팅 | 프리페칭 비활성화 시 |
+| --- | --- |
+| 정적 라우팅 | 사용자가 링크를 클릭할 때만 가져옴 |
+| 동적 라우팅 | 클라이언트가 이동하기 전에 서버에서 먼저 렌더링되어야 함 |
+
+- 완전히 끄지 않고 리소스를 줄이려면 **마우스 호버 시에만 프리페치**하면 됨 → 방문 가능성이 높은 경로로만 제한.
+
+```tsx
+// app/ui/hover-prefetch-link.tsx
+'use client'
+import Link from 'next/link'
+import { useState } from 'react'
+
+function HoverPrefetchLink({ href, children }: {
+  href: string
+  children: React.ReactNode
+}) {
+  const [active, setActive] = useState(false)
+
+  return (
+    <Link
+      href={href}
+      prefetch={active ? null : false}
+      onMouseEnter={() => setActive(true)}
+    >
+      {children}
+    </Link>
+  )
+}
+```
+
+- 실습 (`layout.tsx`): `Home`, `Blog`, `Blog2`, `Blog3`는 `<Link>` (링크가 호버되거나 뷰포트에 들어오면 프리페치), `Contact`는 일반 `<a>` 태그라서 프리페치 없음.
+
+#### 2-5. Hydration이 완료되지 않음
+
+- `<Link>`는 클라이언트 컴포넌트이므로 라우팅 페이지를 프리페치하기 전에 **하이드레이션이 먼저 되어야** 함.
+- 초기 방문 시 대용량 JavaScript 번들 때문에 하이드레이션이 지연되어 프리페칭이 바로 시작되지 않을 수 있음.
+- React는 선택적 Hydration으로 완화하며, 추가 개선 방법:
+  - `@next/bundle-analyzer` 플러그인으로 대규모 종속성을 제거하고 번들 크기를 식별/축소.
+  - 가능하면 클라이언트에서 서버로 로직을 이동 (서버 및 클라이언트 컴포넌트 문서 참조).
+
+```bash
+pnpm add @next/bundle-analyzer
+```
+
+```js
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {}
+
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+})
+
+module.exports = withBundleAnalyzer(nextConfig)
+```
+
+```bash
+ANALYZE=true npm run build   # 또는 yarn / pnpm
+```
+
+- 실행하면 브라우저에 **리포트 탭 3개**가 새로 열려 번들 크기를 확인할 수 있음.
+
+#### Hydration이란?
+
+- 서버에서 생성된 HTML에 JavaScript 로직을 추가하여 **동적으로 상호작용이 가능하도록 만드는 과정**.
+- SSR은 서버에서 미리 HTML을 만들어 전달 → 초기 로딩은 빠르지만 HTML이 정적인 상태라 상호작용에는 추가 작업이 필요함.
+- Hydration은 SSR로 생성된 정적 HTML에 클라이언트 측 JavaScript(이벤트 리스너, 상태 관리 등)를 연결하여 로드 후에도 사용자와 상호작용이 가능하게 만듦.
+
+#### 3. Examples - 네이티브 히스토리 API
+
+- Next.js에서는 `window.history.pushState`, `window.history.replaceState`로 **페이지를 다시 로드하지 않고** 브라우저 기록 스택을 업데이트할 수 있음.
+- 두 호출은 Next.js 라우터와 통합되어 `usePathname`, `useSearchParams`와 동기화 가능.
+
+| 메서드 | 동작 | 이전 상태로 | 예시 |
+| --- | --- | --- | --- |
+| `pushState` | 기록 스택에 새 항목 **추가** | 돌아갈 수 있음 | 제품 목록 정렬 |
+| `replaceState` | 기록 스택의 현재 항목을 **교체** | 돌아갈 수 없음 | 애플리케이션 로케일(Locale) 전환 |
+
+- ※ Locale: 사용자의 언어, 지역, 날짜/시간 형식, 숫자 표기법 등 UI에서 사용되는 다양한 설정을 정의하는 문자열.
+
+#### 복습: How navigation works
+
+- 알아야 할 4가지 개념: **Server Rendering / Prefetching / Streaming / Client-side transitions**
+- Server Rendering: 레이아웃(layout)과 페이지(page)는 기본적으로 React 서버 컴포넌트이며, 초기/후속 내비게이션 모두 서버 컴포넌트 페이로드(Server Component Payload)가 클라이언트로 전송되기 전에 서버에서 생성됨.
+- Client-side transitions: 일반적인 서버 렌더링 페이지 이동은 전체 페이지를 로드해서 state 삭제, 스크롤 위치 초기화, 상호작용 차단이 발생함 → `<Link>`를 통한 클라이언트 측 전환으로 방지.
+  - 공유 레이아웃과 UI 유지
+  - 현재 페이지를 미리 가져온(prefetch) 로딩 상태 또는 새 페이지로 교체
+  - 프리페칭 및 스트리밍과 함께 사용하면 동적 경로에서도 빠른 전환 가능
+
+---
+
+### 4. 05. Server and Client Components
+
+#### Introduction
+
+- 기본적으로 `layout`과 `page`는 **server component**.
+- 서버에서 데이터를 가져와 UI 일부를 렌더링하고, 선택적으로 결과를 cache한 후 client로 스트리밍 가능.
+- 상호작용이나 브라우저 API가 필요한 경우 **client component**로 기능을 계층화.
+
+----
+
+
+#### 1. server 및 client component를 언제 사용해야 하나요?
+
+| 구분 | 이럴 때 사용 |
+| --- | --- |
+| **client component** | state 및 event handler (`onClick`, `onChange`) / Lifecycle logic (`useEffect`) / 브라우저 전용 API (`localStorage`, `window`, `Navigator.geolocation` 등) / 사용자 정의 Hook |
+| **server component** | 서버의 DB 또는 API에서 data를 가져올 때 / API key, token 등 보안 데이터를 client에 노출하지 않고 사용할 때 / 브라우저로 전송되는 JavaScript 양을 줄이고 싶을 때 / 첫 번째 콘텐츠 페인트(FCP)를 개선하고 콘텐츠를 client에 점진적으로 스트리밍할 때 |
+
+
 ## [2026-09-30] 5주차: Route 방식 비교 & Linking and Navigating
 
 ### Route 방식 비교 (React vs Next.js)
