@@ -246,6 +246,8 @@ export default function CounterPage() {
 - **[실습3] (예정)** 테스트의 편의를 위해 앞서 실습한 slug page(like-button) 및 counter page의 링크를 **모든 라우팅 페이지에서 확인**할 수 있도록 `src/app/layout.tsx`에 `Link`로 메뉴를 작성함. (어디에 어떻게 작성할지 먼저 생각해 보기)
 
 
+---
+
 ## [2026-10-07] 6주차: Linking and Navigating (이어서) & Server and Client Components
 
 ### 1. 일반 함수와 객체 구조 분해 할당 매개변수 처리
