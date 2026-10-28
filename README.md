@@ -1,5 +1,229 @@
 # 김민우 (202230305) - React2
 
+## [2026-10-28] 9주차: Server and Client Components (이어서)
+
+### 0. 오늘 한 일
+
+- 3-1 client component 실습(Counter 컴포넌트, counter 페이지, layout 메뉴)을 완료함.
+- 3-2 JS bundle 크기 줄이기, 3-3 server에서 client component로 데이터 전달을 학습함.
+- 사용자 정의 component/library는 `src/app` 밖(`src/components`, `src/ui`, `src/lib`)에서 관리함.
+
+---
+
+### 1. 3-1 client component 사용 (실습)
+
+- 파일 맨 위에 `'use client'`를 선언하면 해당 파일이 server와 client 모듈 트리의 **경계**가 됨.
+- Counter 컴포넌트를 작성하는 이유는 **사용할 목적**이 있기 때문임. 대표적인 목적은 두 가지임.
+  - 다른 component의 완성을 위해 사용함.
+  - 라우팅 페이지의 렌더링을 위해 사용함.
+
+**[실습1] Counter 컴포넌트**
+
+- `src/components` 디렉토리를 만들고 `Counter` 컴포넌트를 작성함.
+- `useState`를 사용하므로 `'use client'`가 필요함.
+
+```tsx
+// src/components/Counter.tsx
+'use client';
+
+import { useState } from 'react';
+
+export default function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      <p>{count} likes</p>
+      <button onClick={() => setCount(count + 1)}>Click me</button>
+    </div>
+  );
+}
+```
+
+**[실습2] counter 라우팅 페이지**
+
+- 라우팅 페이지를 만들고 `Counter` 컴포넌트를 호출함.
+- 이 page는 `'use client'`가 없으므로 **server component**이고, 그 안에서 client component인 `Counter`를 불러 쓰는 구조임.
+
+```tsx
+// src/app/counter/page.tsx
+import Counter from '@/components/Counter';
+
+export default function CounterPage() {
+  return (
+    <div>
+      <h1>Counter Page</h1>
+      <Counter />
+    </div>
+  );
+}
+```
+
+**[실습3] layout에 링크 메뉴 추가**
+
+- slug page(like-button)와 counter page를 **모든 라우팅 페이지에서** 확인하기 위해 메뉴를 작성함.
+- 모든 페이지에서 공통으로 보여야 하므로 `src/app/layout.tsx`(root layout)의 `<header>` > `<nav>` 안에 `Link`로 작성함.
+
+```tsx
+// src/app/layout.tsx
+import Link from 'next/link';
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="ko">
+      <body>
+        <header>
+          <p>=== Root Layout Header ===</p>
+          <nav>
+            <Link href="/">Home</Link> | <Link href="/counter">Counter</Link>
+            <br />
+            <br />
+            Slug Page Menu :&nbsp;
+            <Link href="/nextjs">nextjs</Link>&nbsp;|&nbsp;
+            <Link href="/routing">routing</Link>&nbsp;|&nbsp;
+            <Link href="/ssr-ssg">ssr-ssg</Link>&nbsp;|&nbsp;
+            <Link href="/dynamic-routes">dynamic-routes</Link>
+            <br />
+          </nav>
+          <br />
+          <br />
+        </header>
+        <main>{children}</main>
+        <footer>=== Root Layout Footer ===</footer>
+      </body>
+    </html>
+  );
+}
+```
+
+---
+
+### 2. 3-2 JS bundle 크기 줄이기
+
+- client JavaScript 번들 크기를 줄이려면 UI의 큰 부분을 client component로 표시하는 대신, **특정 대화형 component에만** `'use client'`를 추가함.
+- 예를 들어 `<Layout>`은 로고, 탐색 링크 같은 **정적 요소**가 대부분이지만 **대화형 검색창**이 포함되어 있음.
+- `<Search />`는 대화형이므로 client component가 되어야 하지만, **나머지 layout은 server component로 유지**해야 함.
+
+| component | 종류 | 이유 |
+| --- | --- | --- |
+| `<Search />` | client component | 사용자와의 상호작용이 바로 이루어질 가능성이 있음 |
+| `<Logo />` | server component | 상대적으로 중요하지 않고, 이미지 등 용량이 클 수 있음 |
+| `Layout` | server component (기본값) | 정적 요소가 대부분이므로 server로 유지함 |
+
+```tsx
+// app/layout.tsx (Layout은 기본적으로 Server Component)
+import Search from './search'; // Client Component
+import Logo from './logo'; // Server Component
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <nav>
+        <Logo />
+        <Search />
+      </nav>
+      <main>{children}</main>
+    </>
+  );
+}
+```
+
+```tsx
+// app/ui/search.tsx
+'use client';
+
+export default function Search() {
+  // ...
+}
+```
+
+---
+
+### 3. 3-3 server에서 client component로 데이터 전달
+
+- **props**를 사용해 server component에서 client component로 데이터를 전달할 수 있음.
+- 앞에서 작성한 `PostPage`(`src/app/[id]/page.tsx`, server component)가 client component인 `LikeButton`으로 `likes` props를 전달함.
+- 슬라이드는 `getPost(params.id)`를 사용하지만, 우리 코드는 `posts.find()`로 `id`를 직접 비교하고 없으면 `notFound()`를 호출함.
+
+```tsx
+// src/app/[id]/page.tsx (server component)
+import LikeButton from '@/ui/LikeButton';
+import { posts } from '@/lib/data';
+import { notFound } from 'next/navigation';
+
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const post = posts.find((p) => p.id === id);
+
+  if (!post) {
+    notFound();
+  }
+
+  return (
+    <div>
+      <main>
+        <h1>{post.title}</h1>
+        {/* ... */}
+        <LikeButton likes={post.likes} />
+      </main>
+    </div>
+  );
+}
+```
+
+```tsx
+// src/ui/LikeButton.tsx (client component)
+'use client';
+
+import { useState } from 'react';
+
+export default function LikeButton({ likes }: { likes: number }) {
+  // Optimistic Updates(낙관적 업데이트)
+  // 서버에 저장하지 않고 단순히 UI 상에서 좋아요 수를 증가시키는 역할을 함.
+  const [count, setCount] = useState<number>(likes ?? 0);
+  const [isLiking, setIsLiking] = useState(false);
+
+  const handleLike = async () => {
+    setIsLiking(true);
+    setCount((c) => c + 1);
+    // 예제에서는 짧은 지연 후 버튼 상태만 해제함.
+    setTimeout(() => setIsLiking(false), 300);
+  };
+
+  return (
+    <button onClick={handleLike} disabled={isLiking} aria-pressed={false}>
+      따봉 {count}
+    </button>
+  );
+}
+```
+
+- 전달된 props는 RSC Payload에 포함되어 client로 넘어가고, client component가 이를 초기값(`useState(likes ?? 0)`)으로 사용함.
+
+---
+
+### 4. 오늘 최종 폴더 구조
+
+```text
+src/
+├─ app/                    # 라우팅 페이지만 관리
+│  ├─ layout.tsx           # root layout (링크 메뉴)
+│  ├─ [id]/page.tsx        # slug page (server component)
+│  └─ counter/page.tsx     # counter page (server component)
+├─ components/
+│  └─ Counter.tsx          # client component
+├─ ui/
+│  └─ LikeButton.tsx       # client component
+└─ lib/
+   └─ data.tsx             # 더미 데이터(posts)
+```
+
+---
+
 ## [2026-10-14] 7주차: Server and Client Components
 
 ### 0. Introduction
@@ -25,7 +249,7 @@
 #### 1-2. 예시: Page(server) + LikeButton(client)
 
 - `<Page>`는 게시물 데이터를 가져와 `<LikeButton>`에 props로 전달하는 **server component**임.
-- `@/ui/like-button`은 상호작용(state)이 필요하므로 파일 맨 위에 `'use client'`를 선언함.
+- `@/ui/LikeButton`은 상호작용(state)이 필요하므로 파일 맨 위에 `'use client'`를 선언함.
 
 #### 1-3. 문서의 코드를 완성해 보기
 
@@ -48,7 +272,7 @@ export const posts = [
 
 ```tsx
 // src/app/[id]/page.tsx
-import LikeButton from '@/ui/like-button'
+import LikeButton from '@/ui/LikeButton'
 import { posts } from '@/lib/data'
 import { notFound } from 'next/navigation'
 
@@ -82,7 +306,7 @@ export default async function PostPage({
 **④ LikeButton 컴포넌트**
 
 ```tsx
-// src/ui/like-button.tsx
+// src/ui/LikeButton.tsx
 'use client'
 
 import { useState } from 'react'
@@ -200,50 +424,7 @@ export default function LikeButton({ likes }: { likes: number }) {
 - 파일에 `"use client"`가 표시되면 해당 파일의 모든 import와 자식 component는 client 번들의 일부로 간주됨.
 - 따라서 client를 대상으로 하는 모든 component에 이 지시문을 추가할 필요가 없음.
 
-**실습 (예정)**
-
-> 아래 실습은 아직 진행하지 않았음. (예정)
-
-- 문서는 `/app/ui/counter.tsx`로 작성하지만, `src` 디렉토리를 사용하는 경우 아래처럼 관리하는 것이 일반적임.
-  - `src/app/` 아래에는 **라우팅 페이지만** 작성하고 관리함.
-  - 기타 사용자 정의 component나 library는 `src/` 아래(예: `src/components`)에 작성하고 관리함.
-- **[실습1] (예정)** `src/components` 디렉토리를 만들고 `Counter` 컴포넌트를 작성함.
-
-```tsx
-// src/components/counter.tsx
-'use client'
-
-import { useState } from 'react'
-
-export default function Counter() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <div>
-      <p>{count} likes</p>
-      <button onClick={() => setCount(count + 1)}>Click me</button>
-    </div>
-  )
-}
-```
-
-- **[실습2] (예정)** 라우팅 페이지(`src/app/counter/page.tsx`)를 만들고 `Counter` 컴포넌트를 호출할 수 있도록 작성함.
-
-```tsx
-// src/app/counter/page.tsx
-import Counter from '@/components/counter';
-
-export default function CounterPage() {
-  return (
-    <div>
-      <h1>Counter Page</h1>
-      <p><Counter /></p>
-    </div>
-  );
-}
-```
-
-- **[실습3] (예정)** 테스트의 편의를 위해 앞서 실습한 slug page(like-button) 및 counter page의 링크를 **모든 라우팅 페이지에서 확인**할 수 있도록 `src/app/layout.tsx`에 `Link`로 메뉴를 작성함. (어디에 어떻게 작성할지 먼저 생각해 보기)
+> 3-1 실습(Counter 컴포넌트, counter 페이지, layout 메뉴)은 [2026-10-28] 8주차에서 진행함.
 
 
 ---
@@ -257,8 +438,8 @@ export default function CounterPage() {
 
 ```tsx
 export default async function Page({
-  params,
-}: {
+                                     params,
+                                   }: {
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
@@ -281,7 +462,7 @@ export default async function Page({
 - `blog2` 디렉토리를 복사해서 사용하면 빠르게 실습 가능, 테스트 편의를 위해 메뉴에 `Blog3` 추가.
 
 ```
-app/
+src/app/(marketing)/
 └─ blog3/
    ├─ page.tsx     // 블로그 목록
    ├─ posts.tsx    // 더미 데이터
@@ -290,7 +471,7 @@ app/
 ```
 
 ```tsx
-// app/blog3/[slug]/page.tsx
+// src/app/(marketing)/blog3/[slug]/page.tsx
 import { notFound } from 'next/navigation';
 import { posts } from '../posts';
 
@@ -314,10 +495,10 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
   }
 
   return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.content}</p>
-    </article>
+          <article>
+            <h1>{post.title}</h1>
+            <p>{post.content}</p>
+          </article>
   );
 }
 ```
@@ -327,7 +508,7 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
 
 #### 빌드 시 동작 흐름
 
-1. 빌드 시점에 Next.js가 `app/blog3/[slug]/page.tsx` 같은 **동적 라우트**를 찾으면 `generateStaticParams()`를 실행.
+1. 빌드 시점에 Next.js가 `src/app/(marketing)/blog3/[slug]/page.tsx` 같은 **동적 라우트**를 찾으면 `generateStaticParams()`를 실행.
 2. 반환값은 `[{ slug: "hello" }, { slug: "world" }, { slug: "nextjs" }]` 형태.
 3. 각 `params`에 대해 `page.tsx`를 실행하여 **정적 HTML** 생성 (예: `/blog/hello/index.html`).
 
@@ -371,7 +552,7 @@ import { useLinkStatus } from 'next/link'
 export default function LoadingIndicator() {
   const { pending } = useLinkStatus()
   return pending ? (
-    <div role="status" aria-label="Loading" className="spinner" />
+          <div role="status" aria-label="Loading" className="spinner" />
   ) : null
 }
 ```
@@ -403,13 +584,13 @@ function HoverPrefetchLink({ href, children }: {
   const [active, setActive] = useState(false)
 
   return (
-    <Link
-      href={href}
-      prefetch={active ? null : false}
-      onMouseEnter={() => setActive(true)}
-    >
-      {children}
-    </Link>
+          <Link
+                  href={href}
+                  prefetch={active ? null : false}
+                  onMouseEnter={() => setActive(true)}
+          >
+            {children}
+          </Link>
   )
 }
 ```
@@ -577,17 +758,17 @@ import Link from 'next/link'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html>
-      <body>
-        <nav>
-          {/* Prefetched when the link is hovered or enters the viewport */}
-          <Link href="/blog">Blog</Link>
-          {/* No prefetching */}
-          <a href="/contact">Contact</a>
-        </nav>
-        {children}
-      </body>
-    </html>
+          <html>
+          <body>
+          <nav>
+            {/* Prefetched when the link is hovered or enters the viewport */}
+            <Link href="/blog">Blog</Link>
+            {/* No prefetching */}
+            <a href="/contact">Contact</a>
+          </nav>
+          {children}
+          </body>
+          </html>
   )
 }
 ```
@@ -715,8 +896,8 @@ export async function generateStaticParams() {
 }
 
 export default async function Page({
-  params,
-}: {
+                                     params,
+                                   }: {
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
@@ -729,7 +910,7 @@ export default async function Page({
 - 디렉토리 구조 (더미 데이터는 3장에서 사용했던 것을 사용, 테스트가 편하게 blog2 메뉴를 만듦)
 
 ```
-app/
+src/app/(marketing)/
   └── blog2/
       ├── page.tsx    // 블로그 목록
       ├── posts.tsx   // 더미 데이터
@@ -738,12 +919,12 @@ app/
 ```
 
 ```tsx
-// app/blog2/[slug]/page.tsx
+// src/app/(marketing)/blog2/[slug]/page.tsx
 import { posts } from "../posts";
 
 export default async function PostPage({
-  params,
-}: {
+                                         params,
+                                       }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params; // generateStaticParams가 없으므로 런타임에서 처리
@@ -754,10 +935,10 @@ export default async function PostPage({
   }
 
   return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.content}</p>
-    </article>
+          <article>
+            <h1>{post.title}</h1>
+            <p>{post.content}</p>
+          </article>
   );
 }
 ```
@@ -782,7 +963,7 @@ export default async function PostPage({ params }: { params: { slug: string } })
 - 오류를 수정하기 위해서는 **`async`, `await`를 사용**해야 함.
 
 ```tsx
-// app/blog3/[slug]/page.tsx
+// src/app/(marketing)/blog3/[slug]/page.tsx
 import { notFound } from "next/navigation";
 import { posts } from "../posts";
 
@@ -795,8 +976,8 @@ export async function generateStaticParams() {
 
 // params는 Promise일 수 있으므로 await params로 값을 해제(unwrap)한 후 접근
 export default async function PostPage({
-  params,
-}: {
+                                         params,
+                                       }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
@@ -809,17 +990,17 @@ export default async function PostPage({
   }
 
   return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.content}</p>
-    </article>
+          <article>
+            <h1>{post.title}</h1>
+            <p>{post.content}</p>
+          </article>
   );
 }
 ```
 
 **`generateStaticParams` 동작 흐름**
 
-- 빌드 시점에 Next.js가 `app/blog3/[slug]/page.tsx` 같은 동적 라우트를 찾으면 `generateStaticParams()`를 실행함.
+- 빌드 시점에 Next.js가 `src/app/(marketing)/blog3/[slug]/page.tsx` 같은 동적 라우트를 찾으면 `generateStaticParams()`를 실행함.
 - 반환값은 `[{ slug: "hello" }, { slug: "world" }, { slug: "nextjs" }]` 같은 **slug 객체 배열** 형태임.
 - 각 params에 대해 `page.tsx`를 실행하여 **정적 HTML을 생성**함.
 
@@ -887,10 +1068,10 @@ export default async function Posts({ params }: { params: { slug: string } }) {
   }
 
   return (
-    <article>
-      <h1>{post.title}</h1>
-      <p>{post.content}</p>
-    </article>
+          <article>
+            <h1>{post.title}</h1>
+            <p>{post.content}</p>
+          </article>
   )
 }
 ```
@@ -933,22 +1114,22 @@ export default async function Posts({ params }: { params: { slug: string } }) {
 
 ```tsx
 export default async function ProductsPage({
-  searchParams,
-}: {
+                                             searchParams,
+                                           }: {
   searchParams: Promise<{ id?: string; name?: string }>
 }) {
   const { id = "non id", name = "non name" } = await searchParams
   return (
-    <div>
-      <h1>Products Page</h1>
-      <p>id : {id}</p>
-      <p>name : {name}</p>
-    </div>
+          <div>
+            <h1>Products Page</h1>
+            <p>id : {id}</p>
+            <p>name : {name}</p>
+          </div>
   )
 }
 ```
-  - 6번 라인: `await searchParams`로 Promise가 끝나면 실제 값(객체)이 반환되고, 비구조화 할당으로 속성을 꺼내 옴. `{ id = "non id", name = "non name" }`처럼 왼쪽에 초기값을 지정해 두면 값이 없을 때 기본값이 사용됨.
-  - 브라우저 확인: `/products` 접속 시 `id: non id`, `name: non name`(기본값)이 출력되고, `/products?id=foo&name=bar` 접속 시 `id: foo`, `name: bar`가 출력됨. 없는 속성(`&etc=1`)을 추가해도 오류는 없지만 의미는 없으며, 속성은 필요한 만큼 사용 가능함.
+- 6번 라인: `await searchParams`로 Promise가 끝나면 실제 값(객체)이 반환되고, 비구조화 할당으로 속성을 꺼내 옴. `{ id = "non id", name = "non name" }`처럼 왼쪽에 초기값을 지정해 두면 값이 없을 때 기본값이 사용됨.
+- 브라우저 확인: `/products` 접속 시 `id: non id`, `name: non name`(기본값)이 출력되고, `/products?id=foo&name=bar` 접속 시 `id: foo`, `name: bar`가 출력됨. 없는 속성(`&etc=1`)을 추가해도 오류는 없지만 의미는 없으며, 속성은 필요한 만큼 사용 가능함.
 
 ### 7. Linking between pages (페이지 간 연결) & Route 방식 비교
 - `<Link>`는 Next.js에서 경로를 탐색하는 기본 방법이며, 보다 고급 탐색을 위해 `useRouter` Hook을 사용할 수도 있음.
@@ -1004,9 +1185,9 @@ export default function Page() {
 // app/layout.tsx
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
+          <html lang="en">
+          <body>{children}</body>
+          </html>
   )
 }
 ```
