@@ -1,5 +1,408 @@
 # 김민우 (202230305) - React2
 
+## [2026-11-04] 10주차: Server and Client Components (이어서)
+
+### 0. 오늘 한 일
+
+- 3-3 server에서 client component로 데이터 전달의 나머지(`use` Hook, 직렬화)를 학습함.
+- 3-4 server 및 client component 인터리빙(interleaving) 실습(`ClientLayout`, `ServerContent`, `interleaved` 페이지)을 완료함.
+- Context의 개념과 Next.js에서 사용할 때의 고려사항을 학습함.
+- 3-5 Context provider 실습(`ThemeProvider`, `ThemeStatus`로 light/dark 테마 토글)을 완료함.
+
+---
+
+### 1. 3-3 server에서 client component로 데이터 전달 (이어서)
+
+- 다른 방법으로는 `use` Hook을 사용해 server component에서 client component로 데이터를 **스트리밍**할 수도 있음. (Fetching Data 장에서 소개함)
+- client component에 전달되는 props는 React로 **직렬화(serialization)가 가능**해야 함.
+
+**직렬화(serialization)란?**
+
+- 메모리에 있는 복잡한 데이터를 **바이트의 연속 형태로 변환**하는 과정임.
+- 자바스크립트의 객체나 배열처럼 구조가 있는 데이터를 파일로 저장하거나 네트워크로 전송하기 쉽게 만드는 과정임.
+- React나 Next.js 같은 프레임워크는 컴포넌트의 상태나 트리 구조를 **서버에서 직렬화**하여 클라이언트로 전송하고, **클라이언트에서 역직렬화**하는 과정을 자주 수행함.
+
+---
+
+### 2. 3-4 server 및 client component 인터리빙
+
+#### 2-1. 개념
+
+- 인터리빙(Interleaving)은 여러 데이터 블록이나 비트를 섞어서 전송/처리하여 오류 발생 시 영향을 최소화하는 기술임.
+- 문서에서는 server component와 client component가 **섞여서(interleaved)** 동작할 때 자주 등장하는 패턴을 말함.
+- server component의 props를 client component에 전달할 수 있고, 이를 통해 client component 안에서 server에서 렌더링된 UI를 시각적으로 중첩할 수 있음.
+- `<ClientComponent>`에 **공간(slot)** 을 만들고 `children`을 끼워 넣는 패턴이 일반적임.
+
+```tsx
+// app/ui/modal.tsx (문서 예시)
+'use client'
+
+export default function Modal({ children }: { children: React.ReactNode }) {
+  return <div>{children}</div>
+}
+```
+
+- 예를 들어 client의 state로 표시 여부를 toggle하는 `<Modal>` 안에, server에서 데이터를 가져오는 `<Cart>`가 있는 경우임.
+- 부모 server component(`<Page>`)가 `<Modal>`의 자식으로 `<Cart>`를 전달함. (Modal을 불러오는 곳이 Page이므로 Page가 parent가 됨)
+
+```tsx
+// app/page.tsx (문서 예시)
+import Modal from './ui/modal'
+import Cart from './ui/cart'
+
+export default function Page() {
+  return (
+    <Modal>
+      <Cart />
+    </Modal>
+  )
+}
+```
+
+- 이 패턴에서는 모든 server component(props 포함)가 server에서 **미리 렌더링**됨.
+- 생성된 RSC 페이로드에는 component 트리 안에서 client component가 렌더링되어야 하는 위치에 대한 **참조**가 포함됨.
+
+**실습 전 정리**
+
+- 클라이언트 컴포넌트가 **껍데기** 역할을 하고, 서버 컴포넌트가 그 안의 내용(`children`)으로 들어오는 구조임.
+- Next.js 기본 동작
+  - Server Component → 서버에서 렌더링됨. (데이터 패칭 가능)
+  - Client Component → 브라우저에서 렌더링됨. (상호작용 가능)
+- 즉 **서버 컴포넌트 안에 클라이언트 컴포넌트를 넣을 수는 있지만, 반대는 직접적으로는 불가능**함.
+- 그래서 클라이언트 컴포넌트 안에 만든 `children` 슬롯에 서버 컴포넌트를 **끼워 넣는** 방식으로 둘을 섞어 쓰자는 아이디어가 interleaving임.
+
+#### 2-2. 실습
+
+**[실습1] ClientLayout 컴포넌트 (client)**
+
+- `children`을 받는 껍데기 역할이며, `{children}` 자리가 slot임.
+
+```tsx
+// src/components/ClientLayout.tsx (Client Component)
+'use client';
+
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="layout">
+      <h1>클라이언트 레이아웃</h1>
+      <div className="content">
+        {children} {/* <-- 이 부분이 "slot" */}
+      </div>
+    </div>
+  );
+}
+```
+
+**[실습2] ServerContent 컴포넌트 (server)**
+
+- `'use client'`가 없으므로 server component이고, `async` 함수라서 컴포넌트 안에서 바로 `await fetch`를 사용할 수 있음.
+- 데이터는 `jsonplaceholder.typicode.com`(테스트용 가짜 API 사이트)에서 가져옴.
+- 슬라이드는 `https://`를 사용하지만 우리 코드는 `http://`로 작성되어 있음.
+
+```tsx
+// src/components/ServerContent.tsx (Server Component)
+export default async function ServerContent() {
+  const data = await fetch('http://jsonplaceholder.typicode.com/posts/1').then((r) => r.json());
+  return <p>서버에서 가져온 제목: {data.title}</p>;
+}
+```
+
+**[실습3] interleaved 라우팅 페이지 (server)**
+
+- 일반적인 라우팅 페이지와 동일하며, 작성한 두 컴포넌트를 섞어서 렌더링함.
+- `/interleaved` 주소로 접근함. (현재 `layout.tsx`의 nav에는 이 페이지의 링크를 추가하지 않았고, 주소창에 직접 입력해서 확인함)
+
+```tsx
+// src/app/interleaved/page.tsx (Server Component)
+import ClientLayout from '@/components/ClientLayout';
+import ServerContent from '@/components/ServerContent';
+
+export default function Page() {
+  return (
+    <ClientLayout>
+      <ServerContent />
+    </ClientLayout>
+  );
+}
+```
+
+**동작 과정**
+
+1. Next.js는 먼저 `ServerContent`를 서버에서 렌더링 → HTML로 변환함.
+2. 이 HTML을 `ClientLayout`의 `{children}` 자리에 **끼워 넣음**.
+3. 그 다음 클라이언트에서는 `ClientLayout`만 hydration(JS 연결)함.
+4. 결국 서버 데이터는 이미 들어와 있고, 버튼이나 이벤트 등은 클라이언트 컴포넌트에서 처리가 가능해짐.
+   → 이렇게 둘이 섞여(interleaved) 있는 패턴이 되는 것임.
+
+---
+
+### 3. Context란 무엇인가?
+
+- Next.js에서 Context는 **React의 Context API**를 사용하여 컴포넌트 사이에 데이터를 공유하는 메커니즘임.
+- 부모 컴포넌트에서 자식 컴포넌트로 직접 props를 전달하지 않고도, 특정 데이터를 필요한 컴포넌트에서 쉽게 접근하고 사용할 수 있게 해 줌.
+
+#### 3-1. Context의 주요 특징
+
+| 특징 | 설명 |
+| --- | --- |
+| 전역 상태 관리 | 애플리케이션 전체에서 공유해야 하는 데이터를 중앙 집중적으로 관리함. (예: 사용자 정보, 테마 설정 등) |
+| props drilling 문제 해결 | 컴포넌트 트리가 깊어질수록 props를 계속 전달해야 하는 번거로움을 줄여 주고, 코드의 가독성과 유지 보수성을 높임 |
+| React 컴포넌트에서 사용 | Context는 React에서 제공하는 기능이므로 Next.js에서도 React 컴포넌트를 사용하여 구현함 |
+
+#### 3-2. Next.js에서 Context 사용 시 고려사항
+
+| 구분 | 내용 |
+| --- | --- |
+| 클라이언트 컴포넌트 | Next.js 13부터 client component 안에서 Context를 자유롭게 사용할 수 있음 |
+| 서버 컴포넌트 | server component에서는 직접 Context를 생성하거나 사용할 수 없고, client component로 데이터를 전달하여 **간접적으로** 사용함 |
+| 성능 | Context를 과도하게 사용하면 렌더링 성능에 영향을 줄 수 있으므로 필요한 경우에만 신중하게 사용해야 함 |
+
+#### 3-3. 설명을 위한 예시 (React)
+
+- `MyContext`는 Context 객체를 나타내고, `MyContext.Provider`는 `MyComponent`에 데이터를 제공함.
+- `useContext(MyContext)`를 통해 `MyComponent`는 `"Hello from Context"` 값을 가져와서 렌더링함.
+
+```tsx
+// Context 생성
+const MyContext = React.createContext();
+
+function MyComponent() {
+  const value = useContext(MyContext);
+  return <div>{value}</div>;
+}
+
+function App() {
+  return (
+    <MyContext.Provider value="Hello from Context">
+      <MyComponent />
+    </MyContext.Provider>
+  );
+}
+```
+
+- 추가 정보: React Context API 공식 문서, Next.js 공식 문서를 참고함. Next.js에서도 제공하지만 React에서 제공하는 기능이므로 React 문서에 더 자세한 설명이 있음.
+
+---
+
+### 4. 3-5 Context provider (컨텍스트 제공자)
+
+#### 4-1. 문서 내용
+
+- React Context는 일반적으로 테마처럼 **전역 상태를 공유**하는 데 사용됨.
+- 그러나 **server component에서는 React Context가 지원되지 않음.**
+- 따라서 Context를 사용하려면 `children`을 허용하는 **client component**로 만들어야 함.
+
+```tsx
+// app/theme-provider.tsx (문서 예시)
+'use client'
+
+import { createContext } from 'react'
+
+export const ThemeContext = createContext({})
+
+export default function ThemeProvider({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return <ThemeContext.Provider value="dark">{children}</ThemeContext.Provider>
+}
+```
+
+- 문서 예시는 오류는 없으나 육안으로 변화를 느낄 수 없기 때문에, 별도의 예제로 확인함.
+
+**알아두면 좋은 정보**
+
+- Provider component는 트리에서 **가능한 한 깊숙이** 렌더링해야 함.
+- `ThemeProvider`가 전체 `<html>` 문서 대신 `{children}`만 래핑하는 방식에 주목함.
+- 이렇게 하면 Next.js가 server component의 정적 부분을 더 쉽게 최적화할 수 있음.
+
+#### 4-2. 실습: 테마(light/dark) 토글
+
+**변경 사항 요약**
+
+- `ThemeProvider`가 theme state와 toggle 함수를 제공하고, `document`에 `data-theme`을 설정함. (`ThemeProvider.tsx`)
+- `ThemeStatus`에 toggle 버튼을 구현함. (새로 추가, `ThemeStatus.tsx`)
+- `RootLayout`이 `ThemeProvider`로 body 안쪽을 감싸고, `header`에 `ThemeStatus`(client component)를 추가함. (`layout.tsx`)
+- `globals.css`에 `data-theme` 값에 따른 light/dark 스타일을 작성함.
+
+
+
+**[실습1] ThemeProvider (Context 생성 + Provider)**
+
+```tsx
+// src/components/ThemeProvider.tsx
+'use client';
+
+import { createContext, useEffect, useState } from 'react';
+
+export const ThemeContext = createContext<{
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}>({
+  theme: 'light',
+  toggleTheme: () => {},
+});
+
+export default function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      document.documentElement.dataset.theme = theme;
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  };
+  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+}
+```
+
+**[실습2] ThemeStatus (Context 사용 + toggle 버튼)**
+
+- `useContext(ThemeContext)`로 `theme`과 `toggleTheme`을 가져와 버튼으로 표시함.
+
+```tsx
+// src/components/ThemeStatus.tsx
+'use client';
+
+import { useContext } from 'react';
+import { ThemeContext } from './ThemeProvider';
+
+export default function ThemeStatus() {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  return (
+    <div style={{ display: 'inline-block', marginLeft: 12 }}>
+      <button onClick={toggleTheme} aria-label="toggle theme">
+        Theme: {theme === 'dark' ? '🌑 Dark' : '☀️ Light'}
+      </button>
+    </div>
+  );
+}
+```
+
+**[실습3] RootLayout 수정**
+
+- `ThemeProvider`로 `<header>`, `<main>`, `<footer>`를 감싸고, `<header>` 안에 `<ThemeStatus />`를 추가함.
+- `layout.tsx` 자체는 server component를 유지하고, client component(`ThemeProvider`, `ThemeStatus`)만 가져다 씀. (3-2 JS bundle 줄이기 원칙)
+
+```tsx
+// src/app/layout.tsx
+import Link from 'next/link';
+import './globals.css';
+import ThemeStatus from '@/components/ThemeStatus';
+import ThemeProvider from '@/components/ThemeProvider';
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="ko">
+      <body>
+        <ThemeProvider>
+          <header>
+            <p>=== Root Layout Header ===</p>
+            <nav>
+              <Link href="/">Home</Link> | <Link href="/counter">Counter</Link>
+              {/* ... Slug Page Menu 링크 ... */}
+            </nav>
+            <ThemeStatus />
+          </header>
+          <main>{children}</main>
+          <footer>=== Root Layout Footer ===</footer>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+**[실습4] globals.css**
+
+- 기존 tailwind import와 기본 변수를 지우고, `html`의 `data-theme` 값에 따라 배경/글자색이 바뀌도록 작성함.
+- `transition`으로 색 변화가 0.3초 동안 부드럽게 일어남.
+
+```css
+/* src/app/globals.css */
+html[data-theme='light'] {
+  background-color: white;
+  color: black;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+html[data-theme='dark'] {
+  background-color: #121212;
+  color: white;
+  transition: background-color 0.3s, color 0.3s;
+}
+```
+
+#### 4-3. 코드 설명
+
+**① Context 생성 (ThemeProvider.tsx, client component)**
+
+- context를 사용하면 props를 사용하지 않고도 전역적으로 사용할 theme, 언어 설정, 로그인 정보 등을 하위 컴포넌트에 전달할 수 있음.
+- `createContext()`는 React 컴포넌트 트리 전체에 값을 공유할 수 있도록 하는 역할을 함.
+- `createContext<{...}>(...)`로 Context 객체를 생성하여 theme state를 공유함.
+- `<{...}>` 부분은 **타입** 부분임.
+  - `theme`: `'light'` 또는 `'dark'` 중 하나임.
+  - `toggleTheme`: 아무 인자도 받지 않고, 반환값도 없는 함수라는 의미임.
+- 초기값(default value)은 **provider가 없을 때 사용할 fallback value**임.
+  - React에서는 `createContext()`를 호출할 때 기본값이 반드시 있어야 함.
+  - 보통은 실제 동작하지 않는 빈 함수(`() => {}`)를 기본으로 넣어 둠.
+  - 실제 동작은 `ThemeProvider` 컴포넌트에서 설정함. (`theme: 'light'`, `toggleTheme: () => {}`)
+
+**② ThemeProvider 컴포넌트**
+
+- `useState<'light' | 'dark'>('light')`로 현재 theme state를 만들고, 초기값은 `'light'`임.
+- `useEffect`는 `theme`이 바뀔 때마다 `document.documentElement.dataset.theme = theme`을 실행해 `<html data-theme="...">` 속성을 바꿈. 이 속성을 `globals.css`의 선택자(`html[data-theme='dark']`)가 읽어서 색이 바뀜.
+  - `typeof window !== 'undefined'`는 브라우저 환경인지 확인하는 안전장치임. (`document`는 브라우저에만 있음)
+- `toggleTheme`은 `setTheme`에 함수형 업데이트를 사용해 `dark`이면 `light`로, 아니면 `dark`로 바꿈.
+- `ThemeContext.Provider value={{ theme, toggleTheme }}`으로 하위 컴포넌트 전체에 theme 값과 toggle 함수를 제공함.
+
+**③ ThemeStatus 컴포넌트**
+
+- `useContext(ThemeContext)`로 Provider가 제공한 `theme`, `toggleTheme`을 **props 없이** 바로 꺼내 씀.
+- 버튼을 클릭하면 `toggleTheme`이 실행되어 state가 바뀌고, 버튼 문구와 페이지 색이 함께 바뀜.
+- `ThemeStatus`는 `useContext`와 `onClick`을 사용하므로 `'use client'`가 필요함.
+
+**④ 동작 흐름**
+
+1. 버튼 클릭 → `toggleTheme()` 실행 → `theme` state 변경
+2. `theme`이 바뀌어 `ThemeProvider`가 리렌더링되고, `useEffect`가 실행됨
+3. `<html>`의 `data-theme` 속성 변경 → `globals.css`의 light/dark 스타일이 적용됨
+4. Context를 사용하는 `ThemeStatus`도 새 `theme` 값으로 리렌더링되어 버튼 문구가 바뀜
+
+---
+
+### 5. 오늘 최종 폴더 구조
+
+```text
+src/
+├─ app/                        # 라우팅 페이지만 관리
+│  ├─ layout.tsx               # root layout (ThemeProvider로 감쌈, ThemeStatus 추가)
+│  ├─ globals.css              # data-theme 기반 light/dark 스타일
+│  ├─ [id]/page.tsx            # slug page (server component)
+│  ├─ counter/page.tsx         # counter page (server component)
+│  └─ interleaved/page.tsx     # interleaving 예제 (server component)
+├─ components/
+│  ├─ Counter.tsx              # client component
+│  ├─ ClientLayout.tsx         # client component (children slot)
+│  ├─ ServerContent.tsx        # server component (fetch)
+│  ├─ ThemeProvider.tsx        # client component (Context 생성 + Provider)
+│  └─ ThemeStatus.tsx          # client component (useContext + toggle 버튼)
+├─ ui/
+│  └─ LikeButton.tsx           # client component
+└─ lib/
+   └─ data.tsx                 # 더미 데이터(posts)
+```
+
+---
+
 ## [2026-10-28] 9주차: Server and Client Components (이어서)
 
 ### 0. 오늘 한 일
