@@ -1,5 +1,424 @@
 # 김민우 (202230305) - React2
 
+## [2026-11-11] 11주차: Server and Client Components (이어서)
+
+### 0. 오늘 한 일
+
+- 지난주에 실습한 Context provider(`ThemeProvider`, `ThemeStatus`) 코드를 **한 줄씩 다시 설명**하며 복습함. (유니온 타입, `useEffect` 패턴, 속성 선택자 등)
+- Context provider의 **실행 과정 리뷰, 동작 순서, 순서도 형식 정리**를 학습함.
+- 3-6 외부(서드 파티) component의 이론을 학습하고, `acme-carousel`을 사용한 `Gallery` 실습을 진행함.
+
+---
+
+### 1. Context provider 실습 코드 설명 (복습)
+
+#### 1-1. Context 생성 (`ThemeProvider.tsx`, client component)
+
+- `createContext(...)`로 Context 객체를 생성하여 theme state를 공유함.
+- `<{...}>` 부분은 **타입** 부분임.
+  - `theme`: `'light'` 또는 `'dark'` 중 하나임.
+  - `toggleTheme`: 아무 인자도 받지 않고, 반환값도 없는 함수라는 의미임.
+- 초기값(default value)은 **provider가 없을 때 사용할 fallback value**임.
+  - React에서는 `createContext()`를 호출할 때 기본값이 반드시 있어야 함.
+  - 보통은 실제 동작하지 않는 빈 함수(`() => {}`)를 기본으로 넣어 둠.
+  - 실제 동작은 `ThemeProvider` 컴포넌트에서 설정함.
+
+```tsx
+export const ThemeContext = createContext<{
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
+}>({
+  theme: 'light',
+  toggleTheme: () => {},
+});
+```
+
+#### 1-2. `useState`와 유니온 타입
+
+- `useState<'light' | 'dark'>('light')`에서 `<'light' | 'dark'>`는 TypeScript의 **유니온 타입(Union Type)** 이며, 초기값은 `'light'`라는 의미임.
+
+```tsx
+const [theme, setTheme] = useState<'light' | 'dark'>('light');
+```
+
+**TypeScript의 유니온 타입(Union Type)이란?**
+
+- `|`(파이프)로 여러 타입을 연결해서 "이 값은 각각의 타입 중 하나가 될 수 있다"는 것을 지정함.
+- 문자열 리터럴 유니온 타입의 경우 state 값으로 `'light'` 또는 `'dark'`만 설정할 수 있어, **코드 자동완성과 타입 안정성이 향상**됨.
+
+#### 1-3. `useEffect`로 테마를 HTML 문서 전체에 적용하기
+
+- 아주 전형적인 패턴이며, `useEffect` Hook은 컴포넌트가 렌더링된 **후** 부수 효과(side effect)를 실행하기 위한 함수임.
+
+```tsx
+useEffect(() => {
+  if (typeof window !== 'undefined') {
+    document.documentElement.dataset.theme = theme;
+  }
+}, [theme]);
+```
+
+**① if문의 조건절: "현재 실행 환경이 브라우저인지 확인"**
+
+- 서버 사이드 렌더링(SSR) 단계에서는 `window` 객체가 없음.
+- 만약 서버에서 `window`를 참조하면 오류가 발생함. (`ReferenceError: window is not defined`)
+- 따라서 `typeof window !== 'undefined'`는 "클라이언트(브라우저) 환경일 때만 실행하라"는 뜻임.
+
+**② `document.documentElement.dataset.theme = theme`의 의미**
+
+- `document.documentElement`는 HTML 문서의 `<html>` 요소를 가리킴.
+- `.dataset.theme = theme`은 `<html>` 태그에 `data-theme` 속성을 추가하는 코드임.
+- 예를 들어 theme state 값이 `"dark"`라면 `<html data-theme="dark">`가 됨.
+
+**③ 두 번째 인자 `[theme]` = 의존성 배열(dependency array)**
+
+- `theme` 값이 변경될 때마다 `useEffect` 안의 코드가 **다시 실행**됨.
+- 즉, 테마가 바뀔 때마다 HTML의 `data-theme` 속성도 업데이트됨.
+
+#### 1-4. CSS 속성 선택자(Attribute Selector)
+
+- 위 방법을 사용하면 CSS에서 **속성을 조건으로** 스타일을 다르게 지정할 수 있음.
+
+```css
+html[data-theme='light'] {
+  background-color: white;
+  color: black;
+}
+
+html[data-theme='dark'] {
+  background-color: black;
+  color: white;
+}
+```
+
+- `html[data-theme='light']`는 **속성 선택자**로, CSS에서 클래스(`.class`)나 아이디(`#id`)처럼 요소를 선택하는 또 다른 방법임.
+- 속성 선택자는 class를 여러 개 붙이는 경우보다 **스타일 충돌을 줄일 수 있음**.
+
+#### 1-5. `toggleTheme`과 `ThemeContext.Provider`
+
+```tsx
+const toggleTheme = () => { setTheme((t) => (t === 'dark' ? 'light' : 'dark')) }
+return (
+  <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    {children}
+  </ThemeContext.Provider>
+)
+```
+
+- theme state를 **삼항 연산자**로 토글하여 `setTheme` 함수를 이용해 `toggleTheme`에 저장함.
+- `ThemeContext.Provider`는 무엇일까?
+  - `createContext` 함수를 호출하면 React가 Context 객체 하나를 만들어 줌.
+  - 이 객체 안에는 여러 속성이 있는데, 대표적인 것이 `ThemeContext.Provider`, `ThemeContext.Consumer`임.
+  - 즉, **Provider는 `createContext()`를 호출하면 자동으로 생성되는 React 컴포넌트**임.
+- 따라서 `ThemeContext.Provider` 컴포넌트에 현재 theme state와 함께 `toggleTheme` 함수도 함께 props(`value`)로 전달함.
+  - 하위 컴포넌트에서는 현재 theme state를 알 수 없기 때문에, 버튼 쪽으로 `toggleTheme` 함수와 theme state를 함께 전달하는 것임.
+
+#### 1-6. 테마 토글 버튼 (`ThemeStatus.tsx`, client component)
+
+- `ThemeContext`를 사용하기 위해 `ThemeProvider` 파일에서 import함.
+- `useContext` 함수를 이용해서 `ThemeContext`에서 전달받은 `theme`와 `toggleTheme`를 추출함.
+- 클릭 이벤트가 발생하면 추출된 `toggleTheme` 함수가 실행되고, 버튼 내의 삼항 연산자를 사용하여 버튼의 모양을 교체함.
+
+```tsx
+const { theme, toggleTheme } = useContext(ThemeContext)
+// ...
+<button onClick={toggleTheme} aria-label="toggle theme">
+  Theme: {theme === 'dark' ? '🌑 Dark' : '☀️ Light'}
+</button>
+```
+
+- `aria-label` 속성: 텍스트가 없거나 불분명할 때, 화면 낭독기 등 보조 기술이 버튼의 역할을 설명하도록 **접근성 이름**을 제공함.
+- `aria`: Accessible Rich Internet Applications(접근 가능한 풍부한 인터넷 애플리케이션)의 약자임.
+
+#### 1-7. RootLayout 수정 (server component)
+
+- `ThemeProvider`와 `ThemeStatus`(버튼) 컴포넌트 사용을 위해 import를 추가함.
+- `ThemeStatus`는 출력을 원하는 곳에 삽입함. (`<header>` 안)
+- `ThemeProvider`는 `<header>`, `<main>`, `<footer>`를 감싸 줌.
+
+**`{children}`만 감싸면 최적화된다는 문서 설명은 우리의 경우에 동작하지 않음**
+
+- 문서에서는 `{children}`을 감싸면 최적화할 수 있다고 되어 있지만, 우리의 경우에는 동작하지 않음.
+- 왜냐하면 우리는 **CSS의 속성 선택자로 `html`을 사용**했기 때문임. (`html[data-theme=...]`)
+
+**그런데 `<body>`를 감싸도, `<html>`을 감싸도 동작하는 이유는?**
+
+- `RootLayout` 컴포넌트의 `return` 내부를 보면 일반 HTML처럼 보이지만, 실제로 Next.js에서는 `<html>`과 `<body>`도 **React의 JSX 엘리먼트로 렌더링**됨.
+- 즉, 렌더링 트리 상으로는 다르게 보여도, `useEffect`에서 **직접 DOM을 조작**하기 때문에 결과적으로 똑같이 보이는 것임.
+- 코드가 완성되면 브라우저의 개발자 도구로 테마가 변할 때의 엘리먼트(`<html data-theme="...">`) 상태를 관찰해 볼 것.
+
+---
+
+### 2. Context provider의 실행 과정 리뷰
+
+**① Context 생성 (`ThemeProvider.tsx`)**
+
+- `createContext(...)`로 Context 객체를 만듦. 초기값(default value)은 provider가 없을 때 사용할 fallback값임. (여기서는 `theme: 'light'`, `toggleTheme: () => {}`)
+- 이 파일 내부에서 `ThemeProvider` 컴포넌트를 정의함.
+  - `useState`로 theme 상태를 관리함. (예: `'light' | 'dark'`)
+  - `toggleTheme` 함수는 `setTheme`을 호출해 상태를 변경함.
+  - `useEffect`로 상태 변경 시 `document.documentElement.dataset.theme`에 값을 기록함. (전역 스타일 적용 용도)
+  - `ThemeContext.Provider`에 `value={{ theme, toggleTheme }}`를 넣고 `children`을 감싸 줌.
+- **[요약]** 상태(state)와 상태를 바꾸는 함수(toggle)를 만든 뒤 Provider의 `value`로 내려 줌. 상태는 Provider 내부에 보관됨.
+
+**② Provider 배치 (`RootLayout`)**
+
+- `RootLayout`에서 `ThemeProvider`로 루트(또는 필요한 하위 트리)를 감싸 줌.
+- 이렇게 하면 Provider 하위에 렌더링되는 모든 컴포넌트들이 `ThemeContext`에 접근할 수 있음.
+- `children`은 `RootLayout`으로 전달된 자식 컴포넌트들을 의미하고, Provider가 그들을 감싸므로 자식들이 Context에 접근 가능해짐.
+
+**③ Consumer 사용 (`ThemeStatus.tsx`)**
+
+- `ThemeStatus`는 `'use client'`로 클라이언트 컴포넌트이며, `useContext(ThemeContext)`를 사용해 `value`를 읽어 들임.
+- UI에서는 theme 값을 표시하고, 버튼 클릭 시 `toggleTheme()`을 호출함.
+
+---
+
+### 3. Context provider의 동작 순서 (버튼 클릭 시 흐름)
+
+1. 사용자가 `ThemeStatus`의 버튼을 클릭함.
+2. `toggleTheme()` 호출. (`ThemeStatus`가 Provider의 함수를 호출)
+3. Provider 내부의 `setTheme`이 실행되어 theme 상태가 변경됨.
+4. 상태 변경으로 Provider와 그 하위 컴포넌트들이 **리렌더링**되어 theme 값이 최신으로 반영됨.
+5. `useEffect`가 실행되어 `document.documentElement.dataset.theme` 값도 갱신됨. (글로벌 스타일 반영)
+
+---
+
+### 4. Context provider 순서도 형식으로 정리
+
+- Theme Context의 동작 흐름을 순서도 형식으로 정리한 것이며, 각 단계에 대응하는 파일/위치를 괄호 안에 표기함.
+
+| 단계 | 내용 | 파일/위치 |
+| --- | --- | --- |
+| 1. 앱 시작 / RootLayout 렌더 | `RootLayout`이 렌더되고 `ThemeProvider`로 `children`을 감쌈 | `layout.tsx` → `ThemeProvider` 사용 |
+| 2. Context 생성(초기화) | `ThemeContext = createContext(...)`가 정의되어 있음 (기본값 제공) | `src/components/ThemeProvider.tsx` |
+| 3. Provider 인스턴스 생성 | `ThemeProvider`가 실행되어 내부 state(`theme`, `setTheme`) 생성(`useState`), Provider의 `value = { theme, toggleTheme }`로 설정 | `src/components/ThemeProvider.tsx` |
+| 4. 하위 트리 렌더링 | Provider로 감싼 `children`(페이지/컴포넌트)이 렌더됨. 이 하위 트리는 Context에 접근 가능 | `layout.tsx` → `children` |
+| 5. Consumer 사용: `ThemeStatus` 렌더 | `useContext(ThemeContext)`로 `{ theme, toggleTheme }`를 가져옴 | `src/components/ThemeStatus.tsx` |
+| 6. 사용자 상호작용: 버튼 클릭 | 버튼을 클릭하면 `toggleTheme()` 호출 | `ThemeStatus.tsx` 클릭 → `ThemeProvider`의 `toggleTheme` 실행 |
+| 7. 상태 변경 내부 처리 | `toggleTheme`가 `setTheme`을 호출하여 theme 상태를 변경 (예: `'light'` → `'dark'`) | `ThemeProvider.tsx` |
+| 8. 부수효과 실행(`useEffect`) | theme 변경으로 `useEffect`가 실행되어 `document.documentElement.dataset.theme = theme`로 설정 | `ThemeProvider.tsx`의 `useEffect` |
+| 9. 리렌더링 전파 | state 변경으로 Provider와 그 하위 Consumer들이 최신 `value`를 받아 리렌더링됨. `ThemeStatus`는 새 theme 값을 받아 UI(아이콘/텍스트)를 갱신 | - |
+| 10. 결과: 레이아웃/스타일 반영 | `data-theme` 속성 변경을 바탕으로 CSS(`[data-theme="dark"]` 등)가 적용되면 실제 시각적 테마 변경이 화면에 반영됨 | 전역 CSS(`globals.css`) |
+
+**Flowchart**
+
+```text
+RootLayout 렌더
+      ↓
+ThemeProvider 생성 (useState: theme)
+      ↓
+Provider value 제공 -> children 렌더
+      ↓
+ThemeStatus(useContext) 읽음
+      ↓
+사용자 클릭 -> toggleTheme() 호출
+      ↓
+setTheme(newTheme) 실행 (state 변경)
+      ↓
+useEffect 실행 -> document.dataset.theme 업데이트
+      ↓
+Provider & Consumer 리렌더 -> UI 갱신
+```
+
+---
+
+### 5. 3-6 외부(서드 파티) component
+
+> 이 절은 **이론 위주**로 학습함. (실습은 6장 참고)
+
+#### 5-1. 문서 내용
+
+- client 전용 기능에 의존하는 외부 component를 사용하는 경우, 해당 component를 **client component에 래핑**하여 예상대로 작동하는지 확인할 수 있음.
+- 예를 들어 `<Carousel />`은 `acme-carousel` 패키지에서 가져올 수 있음.
+- 이 component는 `useState`를 사용하지만 `"use client"` 지시문은 없음.
+- 그렇다면 `"use client"` 지시문 없이 어떻게 사용할 수 있을까?
+  - **client component 내에서** `<Carousel />`을 사용하면 예상대로 작동함.
+
+```tsx
+// app/gallery.tsx
+'use client'
+
+import { useState } from 'react'
+import { Carousel } from 'acme-carousel'
+
+export default function Gallery() {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div>
+      <button onClick={() => setIsOpen(true)}>View pictures</button>
+      {/* Works, since Carousel is used within a Client Component */}
+      {isOpen && <Carousel />}
+    </div>
+  )
+}
+```
+
+- 그러나 **server component 내에서 직접 사용하려고 하면 오류가 발생**함.
+  - Next.js가 `<Carousel />`이 client 전용 기능을 사용하고 있다는 것을 알지 못하기 때문임.
+- 이 문제를 해결하려면 client 전용 기능에 의존하는 외부 component를 **자체 client component로 래핑**할 수 있음.
+
+```tsx
+// app/carousel.tsx
+'use client'
+
+import { Carousel } from 'acme-carousel'
+
+export default Carousel
+```
+
+- 이제 server component 내에서 `<Carousel />`을 직접 사용할 수 있음.
+
+```tsx
+// app/page.tsx (Server Component)
+import Carousel from './carousel'
+
+export default function Page() {
+  return (
+    <div>
+      <p>View pictures</p>
+      {/* Works, since Carousel is a Client Component */}
+      <Carousel />
+    </div>
+  )
+}
+```
+
+| 사용 위치 | `"use client"` 없는 외부 component 직접 사용 | 해결 방법 |
+| --- | --- | --- |
+| client component 내부 | 가능함 | - |
+| server component 내부 | **오류 발생** | `'use client'`를 선언한 파일에서 re-export하여 래핑 |
+
+---
+
+### 6. 외부(서드 파티) component 실습
+
+#### 6-1. 문서대로 `gallery.tsx`를 작성하면 발생하는 오류
+
+**① 모듈 미설치 오류**
+
+```text
+Cannot find module 'acme-carousel' or its corresponding type declarations. ts(2307)
+```
+
+- 먼저 모듈을 설치하면 오류를 해결할 수 있음.
+
+**② 모듈 설치 후 `<Carousel />` 사용 시 오류**
+
+```text
+Property 'items' is missing in type '{}' but required in type 'CarouselProps'. ts(2741)
+```
+
+- `Carousel` 컴포넌트의 타입 정의(`CarouselProps`)에 **필수 prop인 `items`가 정의**되어 있어서, `<Carousel />`를 props 없이 렌더링해서 발생하는 타입 에러임.
+- `items`에서 사용할 이미지는 `https://picsum.photos/`의 더미를 사용함.
+
+#### 6-2. 문서의 코드를 수정한 `gallery.tsx`
+
+- 문서의 코드를 다음과 같이 수정함. (`items` 배열을 추가하고 `<Carousel items={items} />`로 전달)
+
+```tsx
+// src/components/gallery.tsx
+'use client'
+
+import { Carousel } from 'acme-carousel'
+
+export default function Gallery() {
+  // 예제용 이미지 목록 (public/images에 파일을 두거나 외부 URL 사용)
+  const items = [
+    { id: '1', src: 'https://picsum.photos/id/1015/800/600', alt: 'Landscape 1' },
+    { id: '2', src: 'https://picsum.photos/id/1016/800/600', alt: 'Landscape 2' },
+    { id: '3', src: 'https://picsum.photos/id/1018/800/600', alt: 'Landscape 3' },
+  ]
+
+  return (
+    <Carousel
+      items={items}
+    />
+  )
+}
+```
+
+#### 6-3. 스타일 적용 문제
+
+- 오류 수정 후에도 동작은 하지만 **이미지가 첫 페이지에 모두 출력**되어 정상 동작이라고 할 수는 없음.
+- 이유는 `acme-carousel`에서 제공하는 **style이 적용되지 않아서**임.
+- style은 `node_modules/acme-carousel/dist/styles.css` 경로에 있지만, 이렇게 특정 모듈에 있는 스타일을 사용할 경우 `global.css`에 import해서 사용하는 것이 일반적임.
+
+```css
+@import 'acme-carousel/dist/styles.css';
+```
+
+- 하지만 이번 경우에는 `acme-carousel`의 특성 때문에 **오류가 발생**함.
+- 이런 경우라면 스타일을 `components/`에 **복사해서** 사용함. (위치는 다른 곳이라도 상관 없음)
+  - `gallery.tsx`에 `import './styles.css'`를 추가함.
+
+> Carousel: 웹사이트나 앱에서 여러 개의 이미지, 비디오, 텍스트 등의 콘텐츠를 일정한 간격으로 순서대로 보여주는 UI 요소임.
+
+#### 6-4. `acme-carousel`의 주요 옵션 및 기능
+
+- 자동 전환(autoplay)
+- 반응형(responsive)
+- 지원 터치/스와이프 제어(touch/swipe)
+- 가상화(virtualization) 및 지연 로딩(lazy loading)
+- 접근성(accessibility) 기능
+- 고급 애니메이션 및 3D 효과 등
+- 자세한 설명은 https://www.npmjs.com/package/acme-carousel 에서 확인할 수 있음.
+
+#### 6-5. Autoplay Carousel 적용
+
+- 먼저 테스트를 위해서 `RootLayout`에 carousel 메뉴를 추가함.
+- `gallery.tsx` 수정: 좌우 버튼을 누르지 않아도 슬라이드가 **자동으로 동작**하도록 `Slide` 컴포넌트를 추가함.
+- 그런데 `Slide`는 named export가 아니라 **default export**이기 때문에 `{ Carousel, Slide }`처럼 import하면 오류가 발생함.
+
+```text
+Module '"acme-carousel"' has no exported member 'Slide'. Did you mean to use 'import Slide from "acme-carousel"' instead? ts(2614)
+```
+
+- 따라서 default export로 import함.
+
+```tsx
+import { useState } from 'react'
+import { Carousel } from 'acme-carousel'
+import Slide from 'acme-carousel'
+```
+
+- 사용하던 line 7의 state 구문(`useState`)을 삭제함.
+
+<!-- TODO: 이후 Slide 적용 코드와 carousel 페이지 실습 내용은 스크린샷에 없어 작성하지 않음. 실습을 마치면 추가할 것 -->
+
+---
+
+### 7. 오늘 최종 폴더 구조
+
+<!-- TODO: gallery.tsx, carousel 페이지는 실제 파일 생성 여부 확인 후 맞게 수정 -->
+
+```text
+src/
+├─ app/                        # 라우팅 페이지만 관리
+│  ├─ layout.tsx               # root layout (carousel 메뉴 추가)
+│  ├─ globals.css              # data-theme 기반 light/dark 스타일
+│  ├─ [id]/page.tsx            # slug page (server component)
+│  ├─ counter/page.tsx         # counter page (server component)
+│  ├─ interleaved/page.tsx     # interleaving 예제 (server component)
+│  └─ carousel/page.tsx        # carousel 예제 (server component)
+├─ components/
+│  ├─ Counter.tsx              # client component
+│  ├─ ClientLayout.tsx         # client component (children slot)
+│  ├─ ServerContent.tsx        # server component (fetch)
+│  ├─ ThemeProvider.tsx        # client component (Context 생성 + Provider)
+│  ├─ ThemeStatus.tsx          # client component (useContext + toggle 버튼)
+│  ├─ gallery.tsx              # client component (acme-carousel 래핑)
+│  └─ styles.css               # acme-carousel 스타일 복사본
+├─ ui/
+│  └─ LikeButton.tsx           # client component
+└─ lib/
+   └─ data.tsx                 # 더미 데이터(posts)
+```
+
+---
+
+
 ## [2026-11-04] 10주차: Server and Client Components (이어서)
 
 ### 0. 오늘 한 일
